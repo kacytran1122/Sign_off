@@ -17,7 +17,7 @@ import { reportObservationJoins, reportSnapshot, startReportPublisher } from './
 import { localSavedReports } from './saved-reports-local.js';
 import { createSavedPhotonBridge, queueSavedPhotonReply } from './saved-photon.js';
 import { guidance, repairEffects, repairTimeZone, type Aid, type Issue } from './repair.js';
-import { activatePhotonMessage, downloadPhoto, listReceivedMessages, photoLimit, readMessage, RetryableError, sendText, tenantPhotoWindowSeconds, verifyEvent, type PhotonConnection } from './photon.js';
+import { activatePhotonMessage, downloadPhoto, listReceivedMessages, photoLimit, readMessage, readyPhotonOutbox, RetryableError, sendText, tenantPhotoWindowSeconds, verifyEvent, type PhotonConnection } from './photon.js';
 import { handleMessage, photoOrderReply, prepareReport, remindManager } from './workflow.js';
 import { createAgents, planManager, runAgentTasks, runFollowUps } from './agents/index.js';
 import type { ManagerPlan } from './agents/scheduler.js';
@@ -362,20 +362,7 @@ async function tick() {
         WHERE o.render_order_id=b.order_id AND o.is_render AND o.status='queued' AND b.status='failed'`);
       await client.query(`UPDATE outbox o SET status='failed',error='Guide text unavailable' FROM outbox notice
         WHERE o.guide_for=notice.id AND o.status='queued' AND notice.status='failed'`);
-      const { rows } = await client.query(`SELECT o.*, c.space_id, c.agent_id,
-        CASE WHEN o.is_render THEN b.image ELSE r.photo END AS image, r.photo_type AS image_type
-        FROM outbox o JOIN conversations c ON c.handle=o.target
-        LEFT JOIN blender_renders b ON b.order_id=o.render_order_id
-        LEFT JOIN reports r ON r.id=o.photo_report_id
-        LEFT JOIN outbox notice ON notice.id=o.guide_for
-        WHERE o.status='queued' AND o.run_after <= now()
-        AND (o.render_order_id IS NULL OR b.status='ready' OR (b.status='failed' AND NOT o.is_render))
-        AND (o.photo_report_id IS NULL OR (o.target=$2 AND r.photo IS NOT NULL))
-        AND (o.guide_for IS NULL OR notice.status='accepted')
-        AND (o.shared_order_id IS NULL OR EXISTS (
-          SELECT 1 FROM report_publications p WHERE p.order_id=o.shared_order_id AND p.revision IS NOT NULL))
-        AND COALESCE(c.photon_project,$1)=CASE WHEN o.target=$2 THEN $3 ELSE $1 END
-        ORDER BY o.created_at LIMIT 5`, [cfg.photonProject, cfg.manager, connectionFor(cfg.manager).photonProject]);
+      const rows = await readyPhotonOutbox(client, cfg.photonProject, cfg.manager, connectionFor(cfg.manager).photonProject);
       for (const job of rows) {
         try {
           if (job.guide_image) {

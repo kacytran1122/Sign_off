@@ -10,7 +10,7 @@ import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
 import { startBlenderWorker } from '../../backend/blender.js';
 import { loadConfig } from '../../backend/config.js';
-import type { Message, Photo } from '../../backend/photon.js';
+import { readyPhotonOutbox, type Message, type Photo } from '../../backend/photon.js';
 import { queueAreaNotices } from '../../backend/reports.js';
 import { handleMessage, prepareReport } from '../../backend/workflow.js';
 
@@ -110,6 +110,25 @@ async function runEvidenceCases(t: TestContext, pool: pg.Pool, url: string, dir:
     assert.match(await lastText(cfg.manager), /Tenant image received/);
     assert.match(await lastText(tenant), /reports\.example\.invalid\/reports\//);
   });
+
+  await t.test('a guide is ready when its safety text was accepted or delivered', async () => {
+    const { rows: [guide] } = await pool.query<{ id: string; guide_for: string }>(
+      'SELECT id, guide_for FROM outbox WHERE target=$1 AND guide_image=$2', [tenant, 'ceiling-drip']);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('UPDATE conversations SET photon_project=$2 WHERE handle=$1', [tenant, 'tenant-project']);
+      for (const status of ['queued', 'accepted', 'delivered', 'failed']) {
+        await client.query('UPDATE outbox SET status=$2 WHERE id=$1', [guide.guide_for, status]);
+        const jobs = await readyPhotonOutbox(client, 'tenant-project', cfg.manager, 'manager-project');
+        assert.equal(jobs.some((job) => job.id === guide.id), status === 'accepted' || status === 'delivered', status);
+      }
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
+
 
   await t.test('follow-up photos require the original reporter and cannot replace evidence', async () => {
     await send(tenant, 'Broken stair tread in the lobby at 201 N Spring St, Los Angeles, CA');

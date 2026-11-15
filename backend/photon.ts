@@ -139,6 +139,24 @@ export async function downloadPhoto(config: PhotonConnection, id: string): Promi
   return { bytes: Buffer.concat(chunks), type };
 }
 
+export async function readyPhotonOutbox(db: Pick<PoolClient, 'query'>, project: string | undefined, manager: string, managerProject: string | undefined) {
+  const { rows } = await db.query(`SELECT o.*, c.space_id, c.agent_id,
+    CASE WHEN o.is_render THEN b.image ELSE r.photo END AS image, r.photo_type AS image_type
+    FROM outbox o JOIN conversations c ON c.handle=o.target
+    LEFT JOIN blender_renders b ON b.order_id=o.render_order_id
+    LEFT JOIN reports r ON r.id=o.photo_report_id
+    LEFT JOIN outbox notice ON notice.id=o.guide_for
+    WHERE o.status='queued' AND o.run_after <= now()
+    AND (o.render_order_id IS NULL OR b.status='ready' OR (b.status='failed' AND NOT o.is_render))
+    AND (o.photo_report_id IS NULL OR (o.target=$2 AND r.photo IS NOT NULL))
+    AND (o.guide_for IS NULL OR notice.status IN ('accepted','delivered'))
+    AND (o.shared_order_id IS NULL OR EXISTS (
+      SELECT 1 FROM report_publications p WHERE p.order_id=o.shared_order_id AND p.revision IS NOT NULL))
+    AND COALESCE(c.photon_project,$1)=CASE WHEN o.target=$2 THEN $3 ELSE $1 END
+    ORDER BY o.created_at LIMIT 5`, [project, manager, managerProject]);
+  return rows;
+}
+
 export async function sendText(config: PhotonConnection, job: { id: string; body: string; space_id: string; agent_id: string; image?: Buffer; image_type?: string | null; image_filename?: string }) {
   let content: { type: 'text'; format: 'plain'; text: string } | { type: 'attachment'; attachmentId: string } =
     { type: 'text', format: 'plain', text: job.body };
