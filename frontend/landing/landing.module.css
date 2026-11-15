@@ -118,67 +118,12 @@
 .heroCopy .heroDescription { max-width: 34ch; margin-top: 1.5rem; color: #4c3e49; font-size: clamp(1.08rem, 1.6vw, 1.28rem); }
 .actions { display: flex; flex-wrap: wrap; gap: .65rem; margin-top: 1.65rem; }
 .actions .primary, .actions .secondary { min-height: 3.05rem; padding-inline: 1.3rem; }
-.preview { justify-self: center; width: min(100%, 21.05rem); }
-.preview figcaption {
-  width: max-content;
-  margin: .65rem auto 0;
-  border: 1px solid #fff8;
-  border-radius: 99px;
-  padding: .18rem .65rem;
-  background: #fffcf8ed;
-  color: #58424f;
-  font-size: .72rem;
-}
-.phone {
-  padding: .36rem;
-  border: 1px solid #3e343b;
-  border-radius: 2.75rem;
-  background: linear-gradient(155deg, #72666e, #1c171b 24%, #100e10 85%, #6a5d65);
-  box-shadow: 0 1.5rem 3.4rem #38223342, 0 .4rem .6rem #3b27332b, inset 0 0 0 2px #c4b9c2a1;
-}
-.screen {
-  min-height: 35.25rem;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  padding: .7rem .72rem 1.7rem;
-  border-radius: 2.38rem;
-  border: 1px solid #0e0c0e;
-  background: #fffefd;
-  color: #211a21;
-}
-.statusBar { position: relative; display: flex; align-items: center; justify-content: space-between; height: 1.55rem; padding-inline: .5rem; font-size: .77rem; font-weight: 700; }
-.sensor { position: absolute; left: 50%; transform: translateX(-50%); width: 4.1rem; height: 1.2rem; border-radius: 1rem; background: #171318; }
-.contact { display: grid; justify-items: center; margin: .85rem -.3rem 0; gap: .08rem; padding-bottom: .7rem; border-bottom: 1px solid #eee7ec; font-size: .84rem; }
-.contact > span:last-child { color: #6c616a; font-size: .68rem; }
-.contactLogo { --signoff-logo-size: 2.15rem; margin-bottom: .22rem; }
-.thread { display: flex; flex-direction: column; gap: .47rem; padding: .72rem 0; font-size: .81rem; line-height: 1.32; }
-.threadTime { text-align: center; color: #726371; font-size: .65rem; margin-bottom: .14rem; }
-.incoming, .outgoing { padding: .47rem .62rem; width: fit-content; max-width: 86%; }
-.incoming { background: #f0ecef; border-radius: .82rem .82rem .82rem .22rem; }
-.outgoing { align-self: end; background: var(--plum); color: #fff; border-radius: .82rem .82rem .22rem .82rem; }
-.messagePhoto { background: #dfcdb9 url('./ceiling-repair.jpg') no-repeat left 57% / 200% auto; aspect-ratio: 2 / 1; }
-.outgoing .messagePhoto { width: 100%; border-radius: .5rem; margin-bottom: .27rem; }
-.thread .signed {
-  --signoff-logo-size: 1.05rem;
-  align-self: center;
-  display: flex;
-  align-items: center;
-  gap: .35rem;
-  margin-top: .21rem;
-  padding: .23rem .52rem;
-  border: 1px solid #ded0db;
-  border-radius: 99px;
-  background: #f8f2f6;
-  color: var(--plum-deep);
-  font-weight: 600;
-  font-size: .67rem;
-}
-.homeBar { width: 6.6rem; height: .21rem; background: #241d23; border-radius: 99px; position: absolute; left: 50%; bottom: .55rem; transform: translateX(-50%); }
 
-.how { padding-block: clamp(4.5rem, 9vw, 8rem); }
+.messagePhoto { background: #dfcdb9 url('./ceiling-repair.jpg') no-repeat left 57% / 200% auto; aspect-ratio: 2 / 1; }
+
+.how { padding-block: clamp(4.5rem, 8vw, 7rem); }
 .sectionIntro { display: grid; justify-items: start; gap: .85rem; }
+.sectionIntro h2 { max-width: 18ch; text-wrap: balance; }
 .sectionIntro > p:last-child { max-width: 47ch; color: var(--quiet); font-size: 1.08rem; }
 .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(.9rem, 2vw, 1.35rem); padding: 0; margin: 2.5rem 0 0; list-style: none; }
 .step { display: grid; grid-template-rows: auto 1fr; gap: 1.1rem; min-width: 0; padding: .65rem; border: 1px solid var(--rule); border-radius: 1.25rem; background: #fffefd; }
@@ -186,30 +131,54 @@
 .reportVisual { background: radial-gradient(ellipse at 18% 0, #f9e5db, #ebd9e5 85%); }
 .planVisual { background: radial-gradient(ellipse at 17% 10%, #f8eacb, #eee0cf); }
 .doneVisual { background: radial-gradient(ellipse at 80% 3%, #f3e7ed, #e4d8e7); }
-.stepCopy { padding: 0 .65rem .6rem; }
-.stepCopy h3, .roles h3 { font-size: 1.13rem; line-height: 1.23; margin-bottom: .35rem; }
+.stepCopy { padding: 0 .7rem .8rem; }
+.stepCopy h3 { font-size: 1.13rem; line-height: 1.23; margin-bottom: .35rem; }
 .stepCopy p, .roles p { color: var(--quiet); font-size: .95rem; }
 .photoCard { max-width: 13.3rem; width: 90%; border-radius: .7rem .7rem .2rem .7rem; background: var(--plum); color: white; padding: .45rem; font-size: .78rem; box-shadow: 0 .8rem 1.7rem #481e3930; transform: rotate(-3deg); }
 .photoCard .messagePhoto { border-radius: .44rem; }
 .photoCard p { padding: .47rem .27rem .19rem; }
-.workOrder { width: min(100%, 15.65rem); overflow: hidden; border: 1px solid #e5d4d8; border-radius: .76rem; background: #fffdf8; box-shadow: 0 .9rem 1.7rem #694e3b25; transform: rotate(2deg); }
-.workOrderHeader { --signoff-logo-size: 1.05rem; display: flex; justify-content: space-between; align-items: center; gap: .2rem; padding: .55rem .65rem; border-bottom: 1px solid #eee4e7; }
-.workOrderHeader > span:last-child { padding: .12rem .39rem; border-radius: 99px; background: #eee1ed; color: var(--plum); font-size: .58rem; font-weight: 600; }
-.workOrderBody { display: grid; gap: .14rem; padding: .65rem; }
-.workOrderBody strong { font-size: .8rem; line-height: 1.2; }
-.workOrderBody > span { font-size: .63rem; color: var(--quiet); }
-.floorPlan { display: grid; grid-template-columns: 3fr 2fr; grid-template-rows: 1fr 1fr; gap: 1px; background: #c1a687; border: 1px solid #c1a687; font-size: .54rem; margin-top: .4rem; }
-.floorPlan span { display: grid; place-content: center; position: relative; text-align: center; background: #f6ecdf; height: 1.2rem; }
-.floorPlan span:first-child { background: #ead5dc; grid-row: span 2; height: 100%; }
-.floorPlan i { position: absolute; top: 24%; right: 15%; width: .37rem; height: .37rem; border-radius: 99px; background: #9a4877; }
+.visitCard { width: min(100%, 14rem); padding: 1.1rem 1rem; display: grid; gap: .2rem; border: 1px solid #f0dbbf; border-radius: .85rem; background: #fffdf8; box-shadow: 0 .9rem 1.7rem #694e3b25; transform: rotate(2deg); }
+.visitCard > span { color: var(--plum); font-size: .68rem; font-weight: 700; }
+.visitCard strong { font: 400 1.8rem/1.05 var(--serif); }
+.visitCard p { color: var(--quiet); font-size: .76rem; }
 .completion { --signoff-logo-size: 2.8rem; display: grid; justify-items: center; align-content: center; gap: .18rem; width: min(100%, 13.25rem); min-height: 8.3rem; border: 1px solid #fff9; border-radius: 1.05rem; background: #fffcf8; box-shadow: 0 .8rem 1.5rem #533c4c20; }
 .completion strong { color: var(--plum); font-size: 1.16rem; }
 .completion p { color: var(--quiet); font-size: .75rem; }
 
-.proof { background: #f6eeef; border-block: 1px solid #ede2e7; }
+.workspaceShowcase {
+  background: radial-gradient(ellipse at 86% 47%, #ecdcea 0, transparent 61%),
+    radial-gradient(ellipse at 0 95%, #f4e6ce 0, transparent 68%), #f7f1ed;
+  border-block: 1px solid #eadfe3;
+  padding-block: clamp(3.4rem, 7vw, 6.25rem);
+}
+.workspaceIntro { display: grid; grid-template-columns: 1.15fr 1fr; gap: 1.35rem; align-items: end; margin-bottom: clamp(1.55rem, 4vw, 3rem); }
+.workspaceIntro p { max-width: 43ch; color: var(--quiet); font-size: 1.08rem; }
+.captureGrid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr); gap: clamp(1rem, 3vw, 2.3rem); align-items: center; }
+.capture { min-width: 0; }
+.capture img {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #fffcf8;
+  border: 1px solid #cfbfca;
+  border-radius: clamp(.65rem, 1.5vw, 1.2rem);
+  box-shadow: 0 .95rem 2.15rem #523b4b22;
+}
+.capture figcaption { margin-top: .58rem; color: var(--quiet); font-size: .77rem; }
+.timelineCapture { max-width: 25rem; }
+
+.proof { background: #fffbf6; border-bottom: 1px solid #efe6e1; }
 .proofGrid { display: grid; grid-template-columns: minmax(0, .86fr) minmax(0, 1.14fr); align-items: center; gap: clamp(2rem, 8vw, 6.3rem); padding-block: clamp(3.45rem, 8vw, 6rem); }
 .proofCopy p { margin-top: 1.15rem; color: var(--quiet); font-size: 1.08rem; max-width: 43ch; }
-.comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
+.comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .65rem;
+  padding: clamp(.65rem, 2vw, 1.25rem);
+  border: 1px solid #eddee4;
+  border-radius: 1.4rem;
+  background: radial-gradient(ellipse at 0 0, #f7e7d3, #f2e6ef 88%);
+}
 .comparison > div { display: grid; gap: .45rem; }
 .comparison > div:nth-child(2) { margin-top: clamp(.5rem, 4vw, 2rem); }
 .beforePhoto, .afterPhoto { min-width: 0; aspect-ratio: 4 / 4.65; border-radius: .85rem; background: #dfd1be url('./ceiling-repair.jpg') no-repeat left center / 200% auto; }
@@ -219,13 +188,25 @@
 .comparison figcaption { grid-column: 1 / -1; text-align: right; }
 .who { padding-block: clamp(4rem, 8vw, 7rem) clamp(2rem, 5vw, 4.5rem); }
 .roles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.25rem; margin-top: 1.35rem; }
-.roles article { --signoff-logo-size: 1.65rem; padding: 1.4rem 1.45rem; border: 1px solid var(--rule); border-radius: 1rem; background: #fffefd; }
-.roles article > span:first-child { margin-bottom: .5rem; }
+.roles article { min-width: 0; padding: clamp(1.15rem, 3vw, 2.25rem); border: 1px solid var(--rule); border-radius: 1.05rem; background: #fbf1e5; }
+.roles article:nth-child(2) { background: #f6ebf2; }
+.roles article:nth-child(3) { background: #f8f4e9; }
+.roles h3 { margin-bottom: .5rem; color: var(--plum-deep); font: 400 clamp(1.9rem, 3vw, 2.7rem)/1 var(--serif); }
 .finish { padding-bottom: clamp(3.3rem, 7vw, 6rem); }
-.finishCard { display: flex; align-items: center; justify-content: space-between; gap: 1.9rem; padding: clamp(2.1rem, 6vw, 4.2rem); border-radius: 1.3rem; background: radial-gradient(ellipse at 100% 10%, #65304f, transparent 60%), var(--plum-ink); color: #fff8f3; }
+.finishCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.9rem;
+  padding: clamp(2.1rem, 6vw, 4.2rem);
+  border-radius: 1.3rem;
+  background: radial-gradient(ellipse at 98% 8%, #814260, transparent 62%),
+    radial-gradient(ellipse at 28% 125%, #5e313e, transparent 56%), var(--plum-ink);
+  color: #fff8f3;
+}
 .finishCard h2 { font-size: clamp(3.35rem, 6vw, 5.8rem); }
 .finishCard h2 em { color: #ecd196; }
-.finishCard p { margin-top: .65rem; color: #f1e2ec; }
+.finishCard p { max-width: 48ch; margin-top: .85rem; color: #f1e2ec; }
 .landing .finalLink { flex: none; background: #fffaf2; color: var(--plum-ink); }
 .landing .finalLink:hover { background: #f5e1cb; }
 .footer { border-top: 1px solid var(--rule); }
@@ -252,9 +233,7 @@
   .hero h1 { font-size: clamp(3.55rem, 10.4vw, 5.25rem); }
   .heroCopy .heroDescription { margin-top: .95rem; }
   .actions { margin-top: 1.15rem; }
-  .preview { align-self: center; width: min(100%, 19.1rem); }
-  .screen { min-height: 32.9rem; }
-  .steps, .roles, .proofGrid { grid-template-columns: 1fr; }
+  .steps, .roles, .proofGrid, .workspaceIntro, .captureGrid { grid-template-columns: 1fr; }
   .steps { margin-top: 1.75rem; }
   .stepVisual { min-height: 12rem; }
   .comparison { width: min(100%, 31rem); }
