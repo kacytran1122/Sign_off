@@ -155,9 +155,14 @@ export async function loadConfig(env = process.env) {
       throw new Error('Live property requires a Matterport model, landmark anchors and views, and a Vexcel roof image');
     }
   }
-  const reportShareOrigin = env.REPORT_SHARE_ORIGIN ? new URL(z.url({ protocol: /^https$/ }).parse(env.REPORT_SHARE_ORIGIN)).origin : undefined;
+  const httpsOrigin = z.url({ protocol: /^https$/ }).transform((url) => new URL(url).origin);
+  const reportShareOrigin = httpsOrigin.optional().parse(env.REPORT_SHARE_ORIGIN || undefined);
+  if (env.REPORT_PUBLISH_TOKEN && !reportShareOrigin) throw new Error('Report publishing requires REPORT_SHARE_ORIGIN');
   const reportPublish = env.REPORT_PUBLISH_TOKEN
-    ? { token: z.string().min(32).parse(env.REPORT_PUBLISH_TOKEN), origin: z.string().parse(reportShareOrigin) }
+    ? {
+        token: z.string().min(32).parse(env.REPORT_PUBLISH_TOKEN),
+        origin: httpsOrigin.parse(env.REPORT_PUBLISH_ORIGIN || reportShareOrigin),
+      }
     : undefined;
 
   return {
