@@ -81,3 +81,29 @@ test('the mobile report distinguishes outdoor forecast and city counts from site
   await expect(page.getByText('These records do not establish whether mice or rats are at the building.', { exact: false })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
+
+test('the manager sees the room linked to the outlined roof inspection area', async ({ page }) => {
+  await page.route(`**${workOrderApi}`, (route) => route.fulfill({ json: {
+    id: '21', status: 'open', zoneId: 'roof-lobby', demo: false,
+    property: {
+      name: 'Fixture building', address: '100 Fixture Ave', timeZone: 'America/Chicago',
+      costar: { storiesAboveGrade: 1, buildingType: 'Industrial', buildingAreaSqFt: 60000 },
+      landmarks: [{ id: 'lobby', label: 'Lobby ceiling', suite: 'Ground floor', views: [] }],
+      zones: [{ id: 'roof-lobby', label: 'Lobby roof area', polygon: [[.2, .2], [.3, .2], [.3, .3], [.2, .3]] }],
+      roof: { imageUrl: '/assets/fixture-roof.png', outline: [[.1, .1], [.8, .1], [.8, 1.4], [.1, 1.4]], attributes: [] },
+    },
+    reports: [{ id: '9', landmark_id: 'lobby', has_photo: false, description: 'Water dripping in the lobby.' }],
+    timeline: [],
+    plans: [{ landmarkId: 'lobby', steps: ['Check the lobby ceiling.', 'If moisture points overhead, check the highlighted roof area.'] }],
+  } }));
+  await page.route('**/assets/fixture-roof.png', (route) => route.fulfill({ contentType: 'image/png', body: photo }));
+  await page.goto(`/work-orders/${key}`);
+
+  const plan = page.getByRole('region', { name: 'Inspection plan' });
+  await expect(plan).toContainText('CoStar · single-story building · Industrial · 60,000 sq ft');
+  await expect(plan.getByRole('listitem')).toHaveText([
+    'Check the lobby ceiling.', 'If moisture points overhead, check the highlighted roof area.',
+  ]);
+  await expect(page.getByRole('img', { name: 'Vexcel aerial view of the property roof' })).toBeVisible();
+  await expect(page.getByRole('img', { name: 'Highlighted zone: Lobby roof area' }).locator('polygon')).toHaveCount(2);
+});

@@ -7,6 +7,7 @@ import pg from 'pg';
 import { Webhook } from 'standardwebhooks';
 import { z } from 'zod';
 import { loadConfig, normalizeHandle } from './config.js';
+import { planRoofInspection } from './inspection.js';
 import { startBlenderWorker } from './blender.js';
 import { startAreaWorker } from './area.js';
 import { guidance, repairEffects, repairTimeZone, type Aid, type Issue } from './repair.js';
@@ -104,6 +105,10 @@ app.get('/api/work-orders/:key', async (c) => {
   const showSponsor = !repair || (repair.property_match && repair.issue === 'leak');
   const property = showSponsor ? { ...cfg.property, roof: { ...roof, imageUrl: imageFile ? `/api/work-orders/${key.data}/roof` : roof.imageUrl } }
     : { name: 'Reported property', address: repair.address, timeZone: repairTimeZone(repair.address, cfg.property.timeZone, repair.area?.timeZone), landmarks: [], zones: [], roof: { attributes: [] } };
+  const plans = showSponsor ? cfg.property.landmarks.filter((point) => point.zoneId === order.zone_id).flatMap((point) => {
+    const plan = planRoofInspection(cfg.property, point, repair?.aid);
+    return plan ? [{ landmarkId: point.id, ...plan }] : [];
+  }) : [];
   c.header('Cache-Control', 'private, no-store');
   return c.json({
     id: order.id, status: order.status, visitStart: order.visit_start, visitEnd: order.visit_end,
@@ -111,7 +116,7 @@ app.get('/api/work-orders/:key', async (c) => {
     sponsorRehearsal: cfg.sponsorRehearsal,
     renderStatus: render.rows[0]?.status,
     repair: repair && { issue: repair.issue, address: repair.address, guidance: guidance[repair.aid], effects: repairEffects(repair.issue, repair.aid), aid: repair.aid, area: repair.area },
-    reports: reports.rows, timeline: timeline.rows,
+    reports: reports.rows, timeline: timeline.rows, plans,
   });
 });
 app.get('/api/work-orders/:key/photos/:id', async (c) => {

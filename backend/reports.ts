@@ -4,7 +4,7 @@ import { repairEffects, type Aid, type Issue } from './repair.js';
 
 export function managerReport(report: {
   code: string; address: string; description: string; issue: Issue; aid: Aid;
-  hasPhoto: boolean; demo: boolean;
+  hasPhoto: boolean; demo: boolean; inspectionSummary?: string;
 }) {
   const stair = report.aid === 'stair-sign';
   const title = stair ? 'Urgent inspection requested for a damaged stair' : report.issue === 'leak' ? 'Water leak inspection requested' : 'Building damage inspection requested';
@@ -19,8 +19,9 @@ export function managerReport(report: {
     `Tenant report: ${report.description.replace(/\s+/g, ' ').trim().slice(0, 360)}`,
     report.hasPhoto ? 'Evidence: Tenant image received. Site inspection pending.' : 'Evidence: Tenant description received. Site inspection pending.',
     `Potential impact: ${repairEffects(report.issue, report.aid)}`,
-    action,
-  ].join('\n');
+    report.inspectionSummary ?? action,
+    report.inspectionSummary && 'Reply with an inspection window.',
+  ].filter(Boolean).join('\n');
 }
 
 const areaSchema = z.object({

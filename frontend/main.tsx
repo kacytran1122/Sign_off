@@ -16,10 +16,12 @@ type Ticket = {
   id: string; status: Status; visitStart: string | null; visitEnd: string | null;
   demo: boolean; photonTest?: boolean; sponsorRehearsal?: boolean; zoneId: string; matterportKey?: string;
   renderStatus?: 'queued' | 'ready' | 'failed';
+  plans?: { landmarkId: string; summary: string; steps: string[] }[];
   repair?: { issue: 'leak' | 'damage'; address: string; guidance: string; effects: string; aid: string; area?: Area | null };
   property: {
     name: string; address: string; timeZone: string; matterportModel?: string;
-    roof: { imageUrl?: string; captureDate?: string; attributes: { label: string; value: string; confidence?: number }[] };
+    costar?: { storiesAboveGrade: number; buildingType?: string; buildingAreaSqFt?: number };
+    roof: { imageUrl?: string; captureDate?: string; outline?: [number, number][]; attributes: { label: string; value: string; confidence?: number }[] };
     landmarks: Landmark[]; zones: { id: string; label: string; polygon: [number, number][] }[];
   };
   reports: { id: string; landmark_id: string; description: string; has_photo: boolean }[];
@@ -38,7 +40,7 @@ const statuses: Record<Status, string> = {
   open: 'Open', scheduled: 'Scheduled', awaiting_confirmation: 'Awaiting tenant', closed: 'Closed',
 };
 const actions: Record<string, string> = {
-  opened: 'Report received', report_linked: 'Related report linked', reminder: 'Manager reminded',
+  opened: 'Report received', inspection_planned: 'Inspection plan created', report_linked: 'Related report linked', reminder: 'Manager reminded',
   scheduled: 'Inspection scheduled', repair_reported: 'Repair reported', reopened: 'Work order reopened',
   closed: 'Work order closed', tenant_confirmed: 'Tenant confirmed', photo_added: 'Photo added',
 };
@@ -153,6 +155,7 @@ function Roof({ ticket, zone }: { ticket: Ticket; zone: Ticket['property']['zone
     <div className={`roof-image ${roof.imageUrl ? '' : 'diagram roof-diagram'}`}>
       {roof.imageUrl ? <img src={roof.imageUrl} alt="Vexcel aerial view of the property roof" /> : <div className="roof-shape" />}
       <svg className="roof-zone" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label={`Highlighted zone: ${zone.label}`} role="img">
+        {roof.outline && <polygon className="roof-outline" points={roof.outline.map(([x, y]) => `${x * 100},${y * 100}`).join(' ')} />}
         <polygon points={zone.polygon.map(([x, y]) => `${x * 100},${y * 100}`).join(' ')} />
       </svg>
     </div>
@@ -160,6 +163,20 @@ function Roof({ ticket, zone }: { ticket: Ticket; zone: Ticket['property']['zone
     {roof.attributes.length > 0 && <dl className="attributes">{roof.attributes.map((item) =>
       <div key={item.label}><dt>{item.label}</dt><dd>{item.value}{item.confidence != null && ` · ${Math.round(item.confidence * 100)}%`}</dd></div>,
     )}</dl>}
+  </section>;
+}
+function InspectionPlan({ plan, property }: { plan: NonNullable<Ticket['plans']>[number]; property: Ticket['property'] }) {
+  const building = property.costar;
+  const facts = [
+    building?.storiesAboveGrade === 1 && 'single-story building',
+    building?.buildingType,
+    building?.buildingAreaSqFt && `${building.buildingAreaSqFt.toLocaleString('en-US')} sq ft`,
+  ].filter(Boolean);
+  return <section className="panel inspection-plan" aria-labelledby="inspection-plan">
+    <div className="panel-head"><div><h2 id="inspection-plan">Inspection plan</h2>
+      <p>CoStar · {facts.join(' · ')}. The Matterport room lines up with the Vexcel roof footprint.</p>
+    </div></div>
+    <ol>{plan.steps.map((step) => <li key={step}>{step}</li>)}</ol>
   </section>;
 }
 function dateTime(value: string, zone: string) {
@@ -210,6 +227,7 @@ function WorkOrder({ access }: { access: string }) {
   const activeReport = data.reports.find((report) => report.id === selected) ?? data.reports[0];
   const active = data.property.landmarks.find((point) => point.id === activeReport?.landmark_id);
   const zone = data.property.zones.find((roof) => roof.id === data.zoneId);
+  const plan = data.plans?.find((item) => item.landmarkId === active?.id);
   return <><Header demo={data.demo} /><main className="page">
     <section className="heading">
       <div><p className="eyebrow">Work order L-{data?.id}</p><h1>{data.repair?.issue === 'damage' ? 'Building damage' : data.repair ? 'Water leak' : 'Ceiling leak'}</h1>
@@ -219,6 +237,7 @@ function WorkOrder({ access }: { access: string }) {
     </section>
     {error && <p role="status" className="notice">{error}</p>}
     {data.visitStart && data.visitEnd && <p className="inspection"><strong>Inspection</strong> {dateTime(data.visitStart, data.property.timeZone)} to {dateTime(data.visitEnd, data.property.timeZone)} · {data.property.timeZone}</p>}
+    {plan && <InspectionPlan plan={plan} property={data.property} />}
     {active && zone && <div className="evidence-grid"><Interior ticket={data} active={active} /><Roof ticket={data} zone={zone} /></div>}
     {data.repair && <Neighborhood area={data.repair.area} />}
     {data.repair && <p className="inspection"><strong>Possible effects</strong> {data.repair.effects}</p>}

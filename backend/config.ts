@@ -17,10 +17,16 @@ const propertySchema = z.object({
     catch { return false; }
   }, 'Use an IANA time zone'),
   matterportModel: z.string().regex(/^[a-zA-Z0-9]+$/).optional(),
+  costar: z.object({
+    storiesAboveGrade: z.number().int().positive(),
+    buildingType: z.string().min(1).optional(),
+    buildingAreaSqFt: z.number().positive().optional(),
+  }).optional(),
   roof: z.object({
     imageUrl: z.url({ protocol: /^https$/ }).optional(),
     imageFile: z.string().regex(/^backend\/config\/roof-assets\/[A-Za-z0-9_-]+\.jpg$/).optional(),
     captureDate: z.string().optional(),
+    outline: z.array(z.tuple([z.number(), z.number()])).min(3).optional(),
     attributes: z.array(z.object({
       label: z.string(),
       value: z.string(),
@@ -34,6 +40,7 @@ const propertySchema = z.object({
     label: z.string(),
     aliases: z.array(z.string().min(1)).default([]),
     zoneId: z.string(),
+    matterportRoomId: z.string().min(1).optional(),
     anchor: vec3.optional(),
     stem: vec3.optional(),
     views: z.array(view).default([]),

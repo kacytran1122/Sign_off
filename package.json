@@ -17,7 +17,8 @@
     "photon:sponsor": "npm run build && node --env-file=.env --env-file=.env.costar --env-file=.env.photon-sponsor build/backend/scripts/demo.js --photon --sponsor",
     "matterport:rooms": "node --env-file-if-exists=.env.costar backend/scripts/matterport-rooms.mjs",
     "test:backend": "node --test build/test/backend/*.test.js",
-    "test:frontend": "playwright test --config test/frontend/playwright.config.ts"
+    "test:frontend": "playwright test --config test/frontend/playwright.config.ts",
+    "costar:evidence": "node backend/scripts/import-sponsor-evidence.mjs"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.8",

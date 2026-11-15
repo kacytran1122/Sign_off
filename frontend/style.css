@@ -105,3 +105,9 @@ textarea { width: 100%; resize: vertical; border: 1px solid var(--line); padding
 .heat-bar { flex-shrink: 0; height: .55rem; background: #b96a31; border-radius: .4rem; }
 .heat-history { display: flex; align-items: end; gap: .18rem; height: 3rem; }
 .heat-history span { flex: 1; background: #b96a31; border-radius: .15rem .15rem 0 0; }
+
+.inspection-plan { margin-bottom: 18px; }
+.inspection-plan ol { margin: 0; padding: 0 22px 16px 40px; }
+.inspection-plan li + li { margin-top: 6px; }
+.roof-zone { overflow: hidden; }
+.roof-zone polygon.roof-outline { fill: none; stroke: #fff3cf; stroke-width: .8px; stroke-dasharray: 2 1; }

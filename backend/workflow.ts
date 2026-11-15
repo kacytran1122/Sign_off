@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg';
+import { planRoofInspection } from './inspection.js';
 import { identifyLeak } from './ai.js';
 import { normalizeHandle, type Config, type Landmark } from './config.js';
 import { type Message, type Photo } from './photon.js';
@@ -84,6 +85,9 @@ async function openReport(db: PoolClient, cfg: Config, handle: string, pending: 
   const area = repair && !repair.propertyMatch ? repair.address : cfg.sponsorRehearsal ? point.suite : `Suite ${point.suite}`;
   await record(db, order.id, related.rowCount ? 'report_linked' : 'opened',
     `${area} · ${point.label}${related.rowCount ? ' · Possible shared source' : ''}`);
+  const inspection = (!repair || (repair.propertyMatch && repair.issue === 'leak'))
+    ? planRoofInspection(cfg.property, point, repair?.aid) : undefined;
+  if (inspection && !related.rowCount) await record(db, order.id, 'inspection_planned', inspection.summary);
   const evidenceUrl = repair ? repairReportUrl(cfg, order.access_key) : `${cfg.baseUrl}/work-orders/${order.access_key}`;
   if (cfg.blenderRenderer) {
     const room = point.label.toLowerCase().split(' ')[0];
@@ -103,7 +107,7 @@ async function openReport(db: PoolClient, cfg: Config, handle: string, pending: 
   if (repair) {
     await notify(db, cfg.manager, managerReport({
       code: code(order.id), address: repair.address, description, issue: repair.issue, aid: repair.aid,
-      hasPhoto: !!pending.photo, demo: cfg.demo || cfg.sponsorRehearsal || cfg.photonTest,
+      hasPhoto: !!pending.photo, inspectionSummary: inspection?.summary, demo: cfg.demo || cfg.sponsorRehearsal || cfg.photonTest,
     }));
     if (pending.photo) await queueManagerPhoto(db, cfg.manager, report.id);
     if (cfg.blenderRenderer) {
@@ -115,9 +119,10 @@ async function openReport(db: PoolClient, cfg: Config, handle: string, pending: 
     cfg.sponsorRehearsal
       ? `Demo ${code(order.id)} · ${related.rowCount ? 'Related leak report' : 'New leak report'}`
       : `${code(order.id)} · ${related.rowCount ? 'Related leak report' : 'New leak report'} · ${cfg.property.name}, suite ${point.suite}`,
+    inspection?.summary,
     `Evidence: ${evidenceUrl}`,
     'Reply with an inspection window, e.g. “Tuesday 2 to 4 PM”.',
-  ].join('\n'));
+  ].filter(Boolean).join('\n'));
 }
 
 async function tenantUpdate(db: PoolClient, cfg: Config, handle: string, id: string, reopen: boolean) {

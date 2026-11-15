@@ -159,4 +159,24 @@ test('repair evidence and render jobs in PostgreSQL', { timeout: 30_000 }, async
     await pool.query('UPDATE blender_renders SET run_after=now() WHERE order_id=$1', [ids.stair]);
     assert.equal(await waitFor(ids.stair, 'failed', 3), null);
   });
+
+  await t.test('a matched leak records and sends the inspection plan', async () => {
+    const room = cfg.property.landmarks[0];
+    cfg.property.address = '101 Fixture Avenue, Houston, TX';
+    cfg.property.costar = { storiesAboveGrade: 1 };
+    cfg.property.matterportModel = 'ModelFixture';
+    cfg.property.roof = {
+      attributes: [], imageUrl: 'https://example.invalid/roof.jpg',
+      outline: [[.1, .1], [.9, .1], [.9, 1.25], [.1, 1.25]],
+    };
+    room.matterportRoomId = 'test-room';
+    room.anchor = { x: 0, y: 2, z: 0 };
+    room.views = [{ sweep: 'fixture', rotation: { x: 0, y: 0 } }];
+    await send(tenant, 'Water dripping at the conference room window\n101 Fixture Avenue, Houston, TX');
+    assert.match(await lastText(cfg.manager), /Inspection plan: check the conference room window inside/);
+    const { rows } = await pool.query("SELECT detail FROM work_order_events WHERE action='inspection_planned'");
+    assert.equal(rows.length, 1);
+    assert.match(rows[0].detail, /mapped roof target/);
+    assert.doesNotMatch(await lastText(tenant), /mapped roof target/);
+  });
 });
