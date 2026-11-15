@@ -53,6 +53,36 @@ test('shared summaries preserve climate observations and counted rodent periods 
   assert.deepEqual(report.area, { ...area, coverage: publicCoverage });
 });
 
+test('an invalid neighborhood section does not discard unrelated evidence', async () => {
+  const config = await loadConfig({ DEMO_MODE: 'true', DATABASE_URL: 'test-database-url' });
+  const area = {
+    city: 'HOUSTON',
+    latitude: 29.7604,
+    longitude: -95.3698,
+    weather: {
+      current: { time: '2026-11-08T14:00', temperature_2m: 62, apparent_temperature: 60, relative_humidity_2m: 55 },
+      daily: { time: ['2026-11-09'], apparent_temperature_max: ['unavailable'] },
+    },
+    history: [{ time: '2026-11-08T20:00:00Z', feelsLikeF: 60, humidity: null }],
+    observations: { hours: 25, lowFeelsLikeF: 50, highFeelsLikeF: 64, lowHumidity: 40, highHumidity: 62 },
+    coverage: {
+      start_date: '2026-08-10', through_date: '2026-11-07',
+      indicators: { water: 2, waste: 0, rodentMentions: 0 },
+      rodentPeriods: null,
+    },
+  };
+  const row = { id: '15', status: 'open', issue: 'leak' as const, aid: 'bucket' as const, property_match: false, area };
+  const report = reportSnapshot(config.property, row);
+  assert.equal(report.area?.latitude, 29.76);
+  assert.equal(report.area?.weather?.current.temperature_2m, 62);
+  assert.equal(report.area?.weather?.daily, undefined);
+  assert.equal(report.area?.history?.[0].feelsLikeF, 60);
+  assert.equal(report.area?.history?.[0].humidity, undefined);
+  assert.equal(report.area?.observations, undefined);
+  assert.deepEqual(report.area?.coverage?.indicators, area.coverage.indicators);
+  assert.equal(report.area?.coverage?.rodentPeriods, undefined);
+});
+
 test('a photo-matched inspection point changes the shared plan without exposing the pin', async () => {
   const config = await loadConfig({ DEMO_MODE: 'true', DATABASE_URL: 'test-database-url' });
   const room = { ...config.property.landmarks[0], matterportRoomId: 'PrivateRoom' };

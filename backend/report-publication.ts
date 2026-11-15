@@ -8,34 +8,38 @@ import { repairScenario } from './repair-scenario.js';
 import { assessRepairInspection } from './inspection.js';
 
 const historySample = z.object({
-  time: z.string(), feelsLikeF: z.number(), temperatureF: z.number().optional(), humidity: z.number().min(0).max(100).optional(),
+  time: z.string(), feelsLikeF: z.number(),
+  temperatureF: z.number().optional().catch(undefined), humidity: z.number().min(0).max(100).optional().catch(undefined),
 });
 const reportArea = z.object({
-  latitude: z.number().min(-90).max(90).optional(),
-  longitude: z.number().min(-180).max(180).optional(),
-  city: z.string().max(100).optional(),
-  timeZone: z.string().max(80).optional(),
-  error: z.string().max(200).optional(),
-  store: z.enum(['TimescaleDB', 'Local PostgreSQL']).optional(),
+  latitude: z.number().min(-90).max(90).optional().catch(undefined),
+  longitude: z.number().min(-180).max(180).optional().catch(undefined),
+  city: z.string().max(100).optional().catch(undefined),
+  timeZone: z.string().max(80).optional().catch(undefined),
+  error: z.string().max(200).optional().catch(undefined),
+  store: z.enum(['TimescaleDB', 'Local PostgreSQL']).optional().catch(undefined),
   weather: z.object({
     current: z.object({ time: z.string(), temperature_2m: z.number(), apparent_temperature: z.number(), relative_humidity_2m: z.number() }),
-    daily: z.object({ time: z.array(z.string()), apparent_temperature_max: z.array(z.number().nullable()) }).optional(),
-  }).optional(),
+    daily: z.object({ time: z.array(z.string()), apparent_temperature_max: z.array(z.number().nullable()) }).optional().catch(undefined),
+  }).optional().catch(undefined),
   coverage: z.object({
     start_date: z.string(), through_date: z.string(),
-    store: z.enum(['TimescaleDB', 'Local PostgreSQL', 'City 311']).optional(),
-    indicators: z.object({ water: z.number().int().nonnegative(), waste: z.number().int().nonnegative(), rodentMentions: z.number().int().nonnegative().optional() }),
+    store: z.enum(['TimescaleDB', 'Local PostgreSQL', 'City 311']).optional().catch(undefined),
+    indicators: z.object({
+      water: z.number().int().nonnegative(), waste: z.number().int().nonnegative(),
+      rodentMentions: z.number().int().nonnegative().optional().catch(undefined),
+    }),
     rodentPeriods: z.array(z.object({
       start_date: z.string(), through_date: z.string(), mentions: z.number().int().nonnegative(),
-    })).length(2).optional(),
-  }).optional(),
-  heat: z.object({ typicalHighF: z.number(), validationMaeF: z.number(), trainedThrough: z.string() }).optional(),
-  history: z.array(historySample).max(25).optional(),
+    })).length(2).optional().catch(undefined),
+  }).optional().catch(undefined),
+  heat: z.object({ typicalHighF: z.number(), validationMaeF: z.number(), trainedThrough: z.string() }).optional().catch(undefined),
+  history: z.array(historySample).max(25).optional().catch(undefined),
   observations: z.object({
     hours: z.number().int().min(1).max(24),
     lowFeelsLikeF: z.number(), highFeelsLikeF: z.number(),
     lowHumidity: z.number().min(0).max(100), highHumidity: z.number().min(0).max(100),
-  }).optional(),
+  }).optional().catch(undefined),
 });
 
 type ReportRow = {
@@ -95,7 +99,7 @@ export function reportSnapshot(property: Config['property'], row: ReportRow) {
 export function startReportPublisher(db: Pool, config: Config) {
   if (!config.reportPublish) return;
   const { origin, token } = config.reportPublish;
-  const evidenceVersion = createHash('sha256').update('report-v7:').update(JSON.stringify(config.property)).digest('hex');
+  const evidenceVersion = createHash('sha256').update('report-v8:').update(JSON.stringify(config.property)).digest('hex');
   let active: Promise<void> | undefined;
 
   async function publish() {
