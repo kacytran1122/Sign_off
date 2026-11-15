@@ -7,9 +7,9 @@ import tenantConfirmation from './assets/tenant-confirmation.webp';
 import styles from './repair-example.module.css';
 
 const stages = [
-  { title: 'Tenant report', heading: 'One photo starts the repair.', description: 'The tenant shares what happened and where they see it, straight from their text thread.' },
-  { title: 'Manager review', heading: 'A visit with a clear starting point.', description: 'The manager gets the original photo, the reported room, and an inspection window to share with the crew.' },
-  { title: 'Tenant confirmation', heading: 'The tenant verifies the fix.', description: 'The timeline records each handoff. The tenant can confirm the repair or reopen it in the same thread.' },
+  { title: 'Tenant report', heading: 'One photo starts the repair.', description: 'The tenant sends a photo and says where they noticed the problem.' },
+  { title: 'Manager review', heading: 'The manager schedules a visit.', description: 'The photo, reported room, and visit window stay together in the work order.' },
+  { title: 'Tenant confirmation', heading: 'The tenant confirms the fix.', description: 'The tenant replies when the leak is gone, and the work order records their confirmation.' },
 ];
 
 export function RepairExample() {

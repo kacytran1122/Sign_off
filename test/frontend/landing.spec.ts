@@ -4,14 +4,14 @@ test('the landing page introduces Signoff and leads to the repair workspace', as
   const response = await page.goto('/');
   expect(response?.ok()).toBe(true);
   await expect(page.getByRole('heading', {
-    level: 1, name: 'The repair isn’t done until the tenant says so.',
+    level: 1, name: 'Report a repair. See it through.',
   })).toBeVisible();
 
   await page.getByRole('link', { name: 'See how it works', exact: true }).click();
   await expect(page).toHaveURL(/#how$/);
-  await expect(page.getByRole('heading', { name: 'From your first text to a confirmed fix.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'What happens after you text.' })).toBeVisible();
 
-  const showcase = page.getByRole('region', { name: 'See the repair in Signoff.' });
+  const showcase = page.getByRole('region', { name: 'Follow one repair.' });
   await expect(showcase.getByRole('tab', { name: 'Tenant report' })).toHaveAttribute('aria-selected', 'true');
   const review = showcase.getByRole('tab', { name: 'Manager review' });
   await review.click();
@@ -28,7 +28,7 @@ test('the landing page introduces Signoff and leads to the repair workspace', as
   await expect(page).toHaveURL(/#who$/);
   await expect(page.locator('#who')).toBeInViewport();
 
-  const closing = page.getByRole('region', { name: 'See a repair through.' });
+  const closing = page.getByRole('region', { name: 'Try it with a sample repair.' });
   await expect(closing.getByRole('link', { name: 'Try the demo' })).toHaveAttribute('href', '/app');
 
   await page.getByRole('link', { name: 'Get started', exact: true }).click();
