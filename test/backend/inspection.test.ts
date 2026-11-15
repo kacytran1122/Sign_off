@@ -2,6 +2,7 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import type { Landmark, Property } from '../../backend/config.js';
 import { planRoofInspection } from '../../backend/inspection.js';
+import { pointInPolygon, polygonContainsPolygon } from '../../backend/roof-geometry.js';
 
 const room: Landmark = {
   id: 'lobby', label: 'Lobby ceiling', suite: 'Ground floor', zoneId: 'roof-lobby', aliases: [],
@@ -45,4 +46,33 @@ test('a target outside the footprint does not produce a roof plan', () => {
     ...property.zones[0], polygon: [[.88, .2], [.95, .2], [.95, .3], [.88, .3]] as [number, number][],
   }] };
   assert.equal(planRoofInspection(moved, room), undefined);
+});
+
+test('a roof notch excludes a target even when its corners and center are on the roof', () => {
+  const roof: [number, number][] = [
+    [.1, .1], [.4, .1], [.4, .5], [.6, .5], [.6, .1], [.9, .1], [.9, .95], [.1, .95],
+  ];
+  const target: [number, number][] = [[.2, .3], [.8, .3], [.8, .9], [.2, .9]];
+  assert.ok(target.every((point) => pointInPolygon(point, roof)));
+  assert.ok(pointInPolygon([.5, .6], roof));
+  assert.equal(polygonContainsPolygon(roof, target), false);
+  const notched = {
+    ...property, roof: { ...property.roof, outline: roof }, zones: [{ ...property.zones[0], polygon: target }],
+  };
+  assert.equal(planRoofInspection(notched, room), undefined);
+});
+
+test('a target may share roof edges and may have a concave shape', () => {
+  const roof: [number, number][] = [[.1, .1], [.8, .1], [.8, 1.4], [.1, 1.4], [.1, .1]];
+  const target: [number, number][] = [
+    [.1, .2], [.3, .2], [.3, .7], [.5, .7], [.5, .2], [.7, .2], [.7, .85], [.1, .85], [.1, .2],
+  ];
+  assert.ok(pointInPolygon([.1, .5], roof));
+  assert.equal(pointInPolygon([.4, .525], target), false);
+  assert.ok(polygonContainsPolygon(roof, target));
+  const concave = {
+    ...property, roof: { ...property.roof, outline: roof }, zones: [{ ...property.zones[0], polygon: target }],
+  };
+  assert.ok(planRoofInspection(concave, room));
+  assert.equal(polygonContainsPolygon(roof, [[.1, .1], [.5, .1], [.8, .1]]), false);
 });
