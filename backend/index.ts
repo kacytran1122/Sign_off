@@ -357,23 +357,32 @@ async function tick() {
 
     if (!cfg.demo) {
       await client.query(`UPDATE outbox SET status='failed',error='Tenant guide'
-        WHERE target=$1 AND is_render AND status='queued'`, [cfg.manager]);
+        WHERE target=$1 AND (is_render OR guide_image IS NOT NULL) AND status='queued'`, [cfg.manager]);
       await client.query(`UPDATE outbox o SET status='failed',error='Render unavailable' FROM blender_renders b
         WHERE o.render_order_id=b.order_id AND o.is_render AND o.status='queued' AND b.status='failed'`);
+      await client.query(`UPDATE outbox o SET status='failed',error='Guide text unavailable' FROM outbox notice
+        WHERE o.guide_for=notice.id AND o.status='queued' AND notice.status='failed'`);
       const { rows } = await client.query(`SELECT o.*, c.space_id, c.agent_id,
         CASE WHEN o.is_render THEN b.image ELSE r.photo END AS image, r.photo_type AS image_type
         FROM outbox o JOIN conversations c ON c.handle=o.target
         LEFT JOIN blender_renders b ON b.order_id=o.render_order_id
         LEFT JOIN reports r ON r.id=o.photo_report_id
+        LEFT JOIN outbox notice ON notice.id=o.guide_for
         WHERE o.status='queued' AND o.run_after <= now()
         AND (o.render_order_id IS NULL OR b.status='ready' OR (b.status='failed' AND NOT o.is_render))
         AND (o.photo_report_id IS NULL OR (o.target=$2 AND r.photo IS NOT NULL))
+        AND (o.guide_for IS NULL OR notice.status='accepted')
         AND (o.shared_order_id IS NULL OR EXISTS (
           SELECT 1 FROM report_publications p WHERE p.order_id=o.shared_order_id AND p.revision IS NOT NULL))
         AND COALESCE(c.photon_project,$1)=CASE WHEN o.target=$2 THEN $3 ELSE $1 END
         ORDER BY o.created_at LIMIT 5`, [cfg.photonProject, cfg.manager, connectionFor(cfg.manager).photonProject]);
       for (const job of rows) {
         try {
+          if (job.guide_image) {
+            job.image_filename = `${job.guide_image}-guide.jpg`;
+            job.image_type = 'image/jpeg';
+            job.image = await readFile(`backend/assets/${job.image_filename}`);
+          }
           const id = await sendText(connectionFor(job.target), job);
           await client.query("UPDATE outbox SET status='accepted', photon_message_id=$2, error=NULL WHERE id=$1", [job.id, id]);
         } catch (error) {

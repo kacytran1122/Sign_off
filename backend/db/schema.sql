@@ -100,6 +100,9 @@ ALTER TABLE outbox ADD COLUMN IF NOT EXISTS render_order_id bigint REFERENCES wo
 ALTER TABLE outbox ADD COLUMN IF NOT EXISTS is_render boolean NOT NULL DEFAULT false;
 ALTER TABLE outbox ADD COLUMN IF NOT EXISTS shared_order_id bigint REFERENCES work_orders (id) ON DELETE CASCADE;
 ALTER TABLE outbox ADD COLUMN IF NOT EXISTS photo_report_id bigint REFERENCES reports (id) ON DELETE CASCADE;
+ALTER TABLE outbox ADD COLUMN IF NOT EXISTS guide_image text CHECK (guide_image IN ('ceiling-drip', 'sink-drip'));
+ALTER TABLE outbox ADD COLUMN IF NOT EXISTS guide_for uuid REFERENCES outbox (id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS outbox_queued_guide_notice ON outbox (guide_for) WHERE guide_for IS NOT NULL AND status='queued';
 CREATE TABLE IF NOT EXISTS agent_tasks (
   id bigserial PRIMARY KEY,
   agent text NOT NULL CHECK (agent IN ('evidence')),

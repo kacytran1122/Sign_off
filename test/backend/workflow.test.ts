@@ -13,7 +13,7 @@ import { loadConfig } from '../../backend/config.js';
 import { parseVisit } from '../../backend/schedule.js';
 import { Webhook } from 'standardwebhooks';
 import { readMessage, sendText, verifyEvent } from '../../backend/photon.js';
-import { belongsToProperty, repairTimeZone, reportAddress, safeAid } from '../../backend/repair.js';
+import { belongsToProperty, repairTimeZone, reportAddress, safeAid, tenantLeakGuide } from '../../backend/repair.js';
 import { managerReport, tenantAreaReport } from '../../backend/reports.js';
 import { canRescheduleInspection } from '../../backend/workflow.js';
 
@@ -132,7 +132,29 @@ test('stair reports warn about falls and distinguish neighborhood data from site
   assert.match(tenantAreaReport('L-3', 'damage', aid, null, 'https://example.test'), /Outdoor weather is unavailable/);
 });
 
-test('Photon sends renders and original tenant photos as typed binary attachments', async (t) => {
+test('a household guide matches an active small drip and gives way to urgent safety advice', () => {
+  const ceiling = tenantLeakGuide('Water dripping from the living room ceiling', 'bucket');
+  assert.equal(ceiling.image, 'ceiling-drip');
+  assert.match(ceiling.text, /ceiling looks intact.*bucket on a flat towel.*Empty it before it fills/);
+  const sink = tenantLeakGuide('A slow drip under the bathroom sink', 'bucket');
+  assert.equal(sink.image, 'sink-drip');
+  assert.match(sink.text, /Stop using the sink.*shallow pan on a flat towel/);
+  for (const text of [
+    'Water dripping through the light', 'Water dripping from the sagging ceiling',
+    'Sewage under the sink', 'A dripping joint with standing water on the floor',
+    'Hot water spraying under the sink', 'Water pouring from the ceiling',
+  ]) {
+    assert.equal(safeAid(text, 'leak', 'bucket'), 'clear', text);
+    const guide = tenantLeakGuide(text, 'bucket');
+    assert.equal(guide.image, undefined, text);
+    assert.match(guide.text, /call emergency maintenance now/);
+  }
+  assert.equal(tenantLeakGuide('Drip from the ceiling', 'clear').image, undefined);
+  assert.equal(tenantLeakGuide('Ceiling stain with no dripping', 'bucket').image, undefined);
+  assert.equal(tenantLeakGuide('Small leak in the hallway', 'bucket').image, undefined);
+});
+
+test('Photon sends renders, original tenant photos and generated guides as typed binary attachments', async (t) => {
   const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
   const requests: { url: string; init?: RequestInit }[] = [];
   t.mock.method(globalThis, 'fetch', async (url: string, init?: RequestInit) => {
@@ -163,6 +185,24 @@ test('Photon sends renders and original tenant photos as typed binary attachment
   assert(photoUpload.includes(Buffer.from('"filename":"tenant-photo.jpg"')));
   assert(photoUpload.subarray(-photoTail.length).equals(photoTail));
   assert.equal(JSON.parse(String(requests[3].init?.body)).spaceId, 'manager-space');
+
+  for (const guide of ['ceiling-drip', 'sink-drip']) {
+    const image_filename = `${guide}-guide.jpg`;
+    const image = await readFile(`backend/assets/${image_filename}`);
+    assert(image.length < 4 * 1024 * 1024 && image.subarray(0, 2).equals(Buffer.from([0xff, 0xd8])));
+    const job = { id: guide, body: '', image, image_type: 'image/jpeg', image_filename, space_id: 'tenant-space', agent_id: 'agent' };
+    const config = { photonProject: 'tenant-project', photonKey: 'test-key' };
+    const start = requests.length;
+    await sendText(config, job);
+    await sendText(config, job);
+    const upload = Buffer.from(requests[start].init?.body as Uint8Array);
+    assert(upload.includes(Buffer.from(`"filename":"${image_filename}"`)));
+    assert.match(requests[start].url, /tenant-project\/attachments$/);
+    assert.equal(JSON.parse(String(requests[start + 1].init?.body)).spaceId, 'tenant-space');
+    assert.equal(new Headers(requests[start].init?.headers).get('idempotency-key'),
+      new Headers(requests[start + 2].init?.headers).get('idempotency-key'));
+    assert.equal(new Headers(requests[start + 1].init?.headers).get('idempotency-key'), guide);
+  }
 });
 
 test('photo, clarification, duplicate delivery, scheduling, and repair reopening', { timeout: 45_000 }, async (t) => {

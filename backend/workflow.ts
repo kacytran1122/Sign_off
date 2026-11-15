@@ -5,7 +5,7 @@ import { identifyLeak } from './ai.js';
 import { normalizeHandle, type Config, type Landmark } from './config.js';
 import { tenantPhotoWindowSeconds, type Message, type Photo } from './photon.js';
 import { formatVisit, looksLikeVisit, parseVisit, type Visit } from './schedule.js';
-import { belongsToProperty, guidance, repairTimeZone, reportAddress, safeAid, suggestPropertyAddress, type Aid, type Issue } from './repair.js';
+import { belongsToProperty, guidance, repairTimeZone, reportAddress, safeAid, suggestPropertyAddress, tenantLeakGuide, type Aid, type Issue, type LeakGuideImage } from './repair.js';
 import { managerReport, repairReportUrl } from './reports.js';
 import { runIntake, type IntakeResult } from './agents/intake.js';
 import { warnAgentFailure, type Model } from './agents/runtime.js';
@@ -40,8 +40,11 @@ export function canRescheduleInspection(visitStart: Date | null, now: number) {
   return visitStart !== null && visitStart.getTime() - now >= rescheduleNoticeMs;
 }
 
-export async function notify(db: PoolClient, target: string, body: string, sharedOrderId?: string) {
-  await db.query('INSERT INTO outbox (target, body, shared_order_id) VALUES ($1, $2, $3)', [target, body, sharedOrderId ?? null]);
+export async function notify(db: PoolClient, target: string, body: string, sharedOrderId?: string, guideImage?: LeakGuideImage) {
+  const { rows: [message] } = await db.query<{ id: string }>(
+    'INSERT INTO outbox (target, body, shared_order_id) VALUES ($1, $2, $3) RETURNING id', [target, body, sharedOrderId ?? null]);
+  if (guideImage) await db.query("INSERT INTO outbox (target, body, guide_image, guide_for) VALUES ($1, '', $2, $3)",
+    [target, guideImage, message.id]);
 }
 export async function record(db: PoolClient, id: string, action: string, detail: string) {
   await db.query('INSERT INTO work_order_events (order_id, action, detail) VALUES ($1, $2, $3)', [id, action, detail]);
@@ -126,7 +129,13 @@ async function openReport(db: PoolClient, cfg: Config, handle: string, pending: 
       [order.id, subject, repair?.aid ?? null]);
   }
   await savePending(db, handle, {}, order.id);
-  await notify(db, handle, repair ? `${code(order.id)} logged. ${description.slice(0, 110)}\n${guidance[repair.aid]}${cfg.reportPublish ? '' : `\n${evidenceUrl}`}` : `${code(order.id)} is with your property manager. I’ll text you when there’s an inspection time.`);
+  const guide = repair?.issue === 'leak' ? tenantLeakGuide(`${pending.text ?? ''}\n${description}`, repair.aid) : undefined;
+  if (repair) {
+    await notify(db, handle, `${code(order.id)} logged. ${description.slice(0, 110)}\n${guide?.text ?? guidance[repair.aid]}${cfg.reportPublish ? '' : `\n${evidenceUrl}`}`,
+      undefined, guide?.image);
+  } else {
+    await notify(db, handle, `${code(order.id)} is with your property manager. I’ll text you when there’s an inspection time.`);
+  }
   if (order.status === 'scheduled') {
     const { rows } = await db.query<{ visit_start: Date; visit_end: Date }>('SELECT visit_start, visit_end FROM work_orders WHERE id=$1', [order.id]);
     const visit = { start: rows[0].visit_start.toISOString(), end: rows[0].visit_end.toISOString() };
@@ -141,7 +150,7 @@ async function openReport(db: PoolClient, cfg: Config, handle: string, pending: 
     }));
     if (pending.photo) await queueManagerPhoto(db, cfg.manager, report.id);
     if (cfg.reportPublish) await notify(db, cfg.manager, `${code(order.id)} · Shared repair report: ${evidenceUrl}`, order.id);
-    if (cfg.blenderRenderer) {
+    if (cfg.blenderRenderer && repair.issue !== 'leak') {
       await db.query("INSERT INTO outbox(target,body,render_order_id,is_render) VALUES($1,'',$2,true)", [handle, order.id]);
     }
     return order.id;

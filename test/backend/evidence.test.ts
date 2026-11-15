@@ -100,10 +100,13 @@ async function runEvidenceCases(t: TestContext, pool: pg.Pool, url: string, dir:
     assert.deepEqual(jobs.find((job) => job.target === cfg.manager), {
       target: cfg.manager, order_id: ids.leak, is_render: false, photo: jpeg.bytes, photo_type: jpeg.type,
     });
-    assert.deepEqual(jobs.find((job) => job.target === tenant), {
-      target: tenant, order_id: ids.leak, is_render: true, photo: null, photo_type: null,
-    });
-    assert.equal(jobs.length, 2);
+    assert.equal(jobs.length, 1);
+    const { rows: guides } = await pool.query(`SELECT guide.target, guide.guide_image, notice.body
+      FROM outbox guide JOIN outbox notice ON notice.id=guide.guide_for`);
+    assert.equal(guides.length, 1);
+    assert.equal(guides[0].target, tenant);
+    assert.equal(guides[0].guide_image, 'ceiling-drip');
+    assert.match(guides[0].body, /set a wide bucket on a flat towel/);
     assert.match(await lastText(cfg.manager), /Tenant image received/);
     assert.match(await lastText(tenant), /reports\.example\.invalid\/reports\//);
   });

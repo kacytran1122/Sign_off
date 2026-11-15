@@ -139,7 +139,7 @@ export async function downloadPhoto(config: PhotonConnection, id: string): Promi
   return { bytes: Buffer.concat(chunks), type };
 }
 
-export async function sendText(config: PhotonConnection, job: { id: string; body: string; space_id: string; agent_id: string; image?: Buffer; image_type?: string | null }) {
+export async function sendText(config: PhotonConnection, job: { id: string; body: string; space_id: string; agent_id: string; image?: Buffer; image_type?: string | null; image_filename?: string }) {
   let content: { type: 'text'; format: 'plain'; text: string } | { type: 'attachment'; attachmentId: string } =
     { type: 'text', format: 'plain', text: job.body };
   if (job.image) {
@@ -148,14 +148,14 @@ export async function sendText(config: PhotonConnection, job: { id: string; body
     const contentType = job.image_type ?? 'image/png';
     if (!imageTypes.has(contentType)) throw new Error('Unsupported image type');
     const extension = contentType === 'image/jpeg' ? 'jpg' : contentType.split('/')[1];
-    const filename = job.image_type ? `tenant-photo.${extension}` : 'repair-guide.png';
+    const filename = job.image_filename ?? (job.image_type ? `tenant-photo.${extension}` : 'repair-guide.png');
     const chunks = [`--${boundary}`, 'Content-Type: application/json', '',
       JSON.stringify({ contentType, sizeBytes: job.image.length, filename }),
       `--${boundary}`, `Content-Type: ${contentType}`, '', ''];
     const body = Buffer.concat([Buffer.from(chunks.join('\r\n')), job.image, Buffer.from(`\r\n--${boundary}--\r\n`)]);
     const uploaded = await call(config, 'attachments', { method: 'POST', body: new Uint8Array(body), headers: {
       'Content-Type': `multipart/related; boundary=${boundary}`, 'Content-Length': String(body.length),
-      'Idempotency-Key': `${job.image_type ? 'photo' : 'render'}-${job.id}-${digest}`,
+      'Idempotency-Key': `${job.image_filename ? 'guide' : job.image_type ? 'photo' : 'render'}-${job.id}-${digest}`,
     } });
     if (!uploaded.ok) {
       await uploaded.body?.cancel();
