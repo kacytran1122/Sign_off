@@ -15,9 +15,12 @@ import { startBlenderWorker } from './blender.js';
 import { startAreaWorker } from './area.js';
 import { guidance, repairEffects, repairTimeZone, type Aid, type Issue } from './repair.js';
 import { downloadPhoto, listReceivedMessages, photoLimit, readMessage, RetryableError, sendText, verifyEvent, type PhotonConnection } from './photon.js';
-import { handleMessage, notify, prepareReport, record } from './workflow.js';
+import { handleMessage, prepareReport, remindManager } from './workflow.js';
+import { createAgents, planManager, runAgentTasks, runFollowUps } from './agents/index.js';
+import type { ManagerPlan } from './agents/scheduler.js';
 
 const cfg = await loadConfig();
+const agents = createAgents(cfg);
 const hostname = cfg.demo || cfg.photonTest ? '127.0.0.1' : '0.0.0.0';
 // Keep Next's CommonJS export and global environment typings isolated from the backend.
 const next = createRequire(import.meta.url)('next') as (
@@ -282,6 +285,7 @@ async function tick() {
         const connection = connectionFor(handle);
         if (!cfg.participants.has(handle) || project !== connection.photonProject) message = undefined;
         let prepared;
+        let managerPlan: ManagerPlan | undefined;
         if (message) {
           let photo;
           if (message.attachmentId) photo = await downloadPhoto(connection, message.attachmentId);
@@ -290,11 +294,13 @@ async function tick() {
             const bytes = Buffer.from(value, 'base64');
             if (bytes.length <= photoLimit) photo = { type: header.slice(5, -7), bytes };
           }
-          prepared = await prepareReport(client, cfg, message, photo);
+          // Agents run here, before BEGIN, so no row locks are held during model calls.
+          prepared = await prepareReport(client, cfg, message, photo, agents?.model);
+          managerPlan = await planManager(client, cfg, agents, message);
         }
         await client.query('BEGIN');
         try {
-          if (message) await handleMessage(client, cfg, message, prepared, project);
+          if (message) await handleMessage(client, cfg, message, prepared, project, managerPlan);
           if (type === 'message.delivered' || type === 'message.failed') {
             await client.query("UPDATE outbox SET status=$2 WHERE photon_message_id=$1 AND status <> 'delivered'",
               [z.object({ id: z.string() }).parse(object).id, type === 'message.delivered' ? 'delivered' : 'failed']);
@@ -314,16 +320,15 @@ async function tick() {
       }
     }
 
-    await client.query('BEGIN');
-    try {
-      const { rows } = await client.query(`UPDATE work_orders SET next_nudge_at=NULL
-        WHERE status='open' AND next_nudge_at <= now() RETURNING id, access_key`);
-      for (const order of rows) {
-        await record(client, order.id, 'reminder', 'Sent the manager a reminder to schedule the inspection.');
-        await notify(client, cfg.manager, `Reminder: L-${order.id} is waiting for an inspection window. ${cfg.baseUrl}/work-orders/${order.access_key}`);
-      }
-      await client.query('COMMIT');
-    } catch (error) { await client.query('ROLLBACK'); throw error; }
+    if (!agents) {
+      await client.query('BEGIN');
+      try {
+        const { rows } = await client.query(`UPDATE work_orders SET next_nudge_at=NULL
+          WHERE status='open' AND next_nudge_at <= now() RETURNING id, access_key`);
+        for (const order of rows) await remindManager(client, cfg, order);
+        await client.query('COMMIT');
+      } catch (error) { await client.query('ROLLBACK'); throw error; }
+    }
 
     if (!cfg.demo) {
       await client.query(`UPDATE outbox SET status='failed',error='Tenant guide'
@@ -351,6 +356,11 @@ async function tick() {
           [job.id, error instanceof Error ? error.name : 'UnknownError', delay ?? Math.min(2 ** job.attempts, 30)]);
         }
       }
+    }
+    // Model-driven background agents run last so queued texts are never delayed by model latency.
+    if (agents) {
+      await runFollowUps(client, cfg, agents);
+      await runAgentTasks(client, cfg, agents);
     }
   } finally {
     try { if (locked) await client.query('SELECT pg_advisory_unlock(75820419)'); }

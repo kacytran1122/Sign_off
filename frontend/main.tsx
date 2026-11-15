@@ -51,6 +51,7 @@ const actions: Record<string, string> = {
   opened: 'Report received', inspection_planned: 'Inspection plan created', report_linked: 'Related report linked', reminder: 'Manager reminded',
   scheduled: 'Inspection scheduled', repair_reported: 'Repair reported', reopened: 'Work order reopened',
   closed: 'Work order closed', tenant_confirmed: 'Tenant confirmed', photo_added: 'Photo added', damage_point_confirmed: 'Damage spot confirmed',
+  agent_trace: 'Agents involved', agent_triage: 'Safety triage', agent_brief: 'Evidence brief', agent_snooze: 'Follow-up scheduled',
 };
 
 function usePoll<T>(url?: string) {

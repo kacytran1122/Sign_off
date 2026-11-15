@@ -116,6 +116,9 @@ export async function loadConfig(env = process.env) {
   }
   participants.set(manager, { role: 'manager' });
 
+  const agentMode = env.AGENT_MODE === 'true';
+  if (agentMode && (!env.OPENAI_API_KEY || !env.OPENAI_MODEL)) throw new Error('AGENT_MODE requires OPENAI_API_KEY and OPENAI_MODEL');
+
   const rawOrigin = env.PUBLIC_BASE_URL ?? 'http://localhost:4310';
   const baseUrl = new URL(rawOrigin).origin;
   if (sponsorRehearsal && !['localhost', '127.0.0.1'].includes(new URL(baseUrl).hostname)) {
@@ -149,6 +152,7 @@ export async function loadConfig(env = process.env) {
     webhookSecret: env.PHOTON_WEBHOOK_SECRET,
     blenderRenderer: env.BLENDER_RENDERER,
     repairContext: env.REPAIR_CONTEXT === 'true',
+    agentMode,
     reportShareOrigin: env.REPORT_SHARE_ORIGIN ? new URL(z.url({ protocol: /^https$/ }).parse(env.REPORT_SHARE_ORIGIN)).origin : undefined,
     tigerDatabaseUrl: env.TIGER_DATABASE_URL || undefined,
     nudgeSeconds: z.coerce.number().int().positive().parse(env.NUDGE_SECONDS ?? (demo ? 120 : 3600)),

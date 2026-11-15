@@ -7,6 +7,10 @@ import { type Message, type Photo } from './photon.js';
 import { formatVisit, looksLikeVisit, parseVisit, type Visit } from './schedule.js';
 import { belongsToProperty, guidance, repairTimeZone, reportAddress, safeAid, type Aid, type Issue } from './repair.js';
 import { managerReport, repairReportUrl } from './reports.js';
+import { runIntake, type IntakeResult } from './agents/intake.js';
+import { warnAgentFailure, type Model } from './agents/runtime.js';
+import type { ManagerPlan } from './agents/scheduler.js';
+import { enqueueAgentTask, recordAgentTrace } from './agents/tasks.js';
 
 type Pending = {
   text?: string;
@@ -14,6 +18,8 @@ type Pending = {
   photo?: { base64: string; type: string };
   choices?: string[];
   proposedVisit?: Visit;
+  /** Set when the scheduler agent proposed marking orderId repaired; YES carries it out. */
+  proposedFix?: boolean;
   orderId?: string;
   photoOrderId?: string;
 };
@@ -33,6 +39,17 @@ export async function notify(db: PoolClient, target: string, body: string) {
 }
 export async function record(db: PoolClient, id: string, action: string, detail: string) {
   await db.query('INSERT INTO work_order_events (order_id, action, detail) VALUES ($1, $2, $3)', [id, action, detail]);
+}
+export async function remindManager(db: PoolClient, cfg: Config, order: { id: string; access_key: string }, lead?: string) {
+  await record(db, order.id, 'reminder', 'Sent the manager a reminder to schedule the inspection.');
+  await notify(db, cfg.manager, `${lead ?? `Reminder: ${code(order.id)} is waiting for an inspection window.`} ${cfg.baseUrl}/work-orders/${order.access_key}`);
+}
+
+const confirmReply = /^(yes|confirm)(?:\s+L-\d+)?[.!]?$/i;
+const fixedReply = /^(fixed|marked fixed|the leak is fixed|repaired)(?:\s+L-\d+)?[.!]?$/i;
+/** Exact manager commands skip the scheduler agent and run deterministically. */
+export function isManagerCommand(text: string) {
+  return /^start[.!]?$/i.test(text) || confirmReply.test(text) || fixedReply.test(text) || looksLikeVisit(text);
 }
 async function savePending(db: PoolClient, handle: string, pending: Pending, order?: string) {
   await db.query('UPDATE conversations SET pending = $2, active_order = COALESCE($3,active_order) WHERE handle = $1',
@@ -69,7 +86,8 @@ async function addReportPhoto(db: PoolClient, cfg: Config, tenant: string, order
   return true;
 }
 
-async function openReport(db: PoolClient, cfg: Config, handle: string, pending: Pending, point: Landmark, description: string, repair?: Repair) {
+/** Returns the work-order id when this call filed a new report. */
+async function openReport(db: PoolClient, cfg: Config, handle: string, pending: Pending, point: Landmark, description: string, repair?: Repair): Promise<string | undefined> {
   const prior = await db.query('SELECT 1 FROM reports WHERE message_id = $1', [pending.messageId]);
   if (prior.rowCount) return;
   const related = await db.query<Order>(`
@@ -97,6 +115,7 @@ async function openReport(db: PoolClient, cfg: Config, handle: string, pending: 
   const inspection = (!repair || (repair.propertyMatch && repair.issue === 'leak'))
     ? planRoofInspection(cfg.property, point, repair?.aid) : undefined;
   if (inspection && !related.rowCount) await record(db, order.id, 'inspection_planned', inspection.summary);
+  if (cfg.agentMode) await enqueueAgentTask(db, 'evidence', order.id);
   const evidenceUrl = repair ? repairReportUrl(cfg, order.access_key) : `${cfg.baseUrl}/work-orders/${order.access_key}`;
   if (cfg.blenderRenderer) {
     const room = point.label.toLowerCase().split(' ')[0];
@@ -123,7 +142,7 @@ async function openReport(db: PoolClient, cfg: Config, handle: string, pending: 
     if (cfg.blenderRenderer) {
       await db.query("INSERT INTO outbox(target,body,render_order_id,is_render) VALUES($1,'',$2,true)", [handle, order.id]);
     }
-    return;
+    return order.id;
   }
   await notify(db, cfg.manager, [
     cfg.sponsorRehearsal
@@ -134,6 +153,7 @@ async function openReport(db: PoolClient, cfg: Config, handle: string, pending: 
     `Evidence: ${evidenceUrl}`,
     'Reply with an inspection window, e.g. “Tuesday 2 to 4 PM”.',
   ].filter(Boolean).join('\n'));
+  return order.id;
 }
 
 async function tenantUpdate(db: PoolClient, cfg: Config, handle: string, id: string, reopen: boolean) {
@@ -167,8 +187,9 @@ async function tenantUpdate(db: PoolClient, cfg: Config, handle: string, id: str
 async function managerReply(db: PoolClient, cfg: Config, handle: string, message: Message, conversation: Conversation) {
   const pending = conversation.pending;
   const explicit = /\bL-([1-9]\d{0,12})\b/i.exec(message.text)?.[1];
-  const confirming = /^(yes|confirm)(?:\s+L-\d+)?[.!]?$/i.test(message.text);
-  const fixed = /^(fixed|marked fixed|the leak is fixed|repaired)(?:\s+L-\d+)?[.!]?$/i.test(message.text);
+  const confirming = confirmReply.test(message.text);
+  const fixed = fixedReply.test(message.text) ||
+    (confirming && !!pending.proposedFix && (!explicit || explicit === pending.orderId));
   let id = explicit ?? (confirming ? pending.orderId : undefined);
   if (!id && (fixed || looksLikeVisit(message.text))) {
     const { rows } = await db.query<{ id: string }>(
@@ -185,6 +206,7 @@ async function managerReply(db: PoolClient, cfg: Config, handle: string, message
   }
   const zone = repairTimeZone(order.address, cfg.property.timeZone, order.time_zone);
   if (fixed) {
+    if (pending.orderId === id) await savePending(db, handle, {});
     await db.query("UPDATE work_orders SET status='awaiting_confirmation', next_nudge_at=NULL WHERE id=$1", [id]);
     await record(db, id, 'repair_reported', 'Manager reported a repair. Asking tenants to verify.');
     for (const tenant of await reporters(db, id)) {
@@ -228,7 +250,24 @@ async function managerReply(db: PoolClient, cfg: Config, handle: string, message
 
 const tenantStatusReply = /^(still leaking|still broken|resolved)(?:\s+L-([1-9]\d{0,12}))?[.!]?$/i;
 
-export async function prepareReport(db: PoolClient, cfg: Config, message: Message, photo?: Photo) {
+type Interpretation = { interpreted: Awaited<ReturnType<typeof identifyLeak>>; agent?: IntakeResult };
+
+/** Intake agent when enabled, otherwise (or on any agent failure) the single-call classifier. */
+async function interpretReport(db: PoolClient, cfg: Config, handle: string, text: string,
+  photo: Photo | undefined, landmarks: Landmark[], model?: Model): Promise<Interpretation> {
+  if (model) {
+    try {
+      const agent = await runIntake({ db, cfg, model, handle, text, photo, landmarks });
+      if (agent.kind === 'report') return { interpreted: agent.interpreted, agent };
+      return { agent, interpreted: { isLeak: false, isDamage: false, description: text, landmark: undefined, visibleAddress: undefined, temporaryAid: undefined } };
+    } catch (error) {
+      warnAgentFailure('intake', error);
+    }
+  }
+  return { interpreted: await identifyLeak(cfg, text, photo, landmarks) };
+}
+
+export async function prepareReport(db: PoolClient, cfg: Config, message: Message, photo?: Photo, model?: Model) {
   const handle = normalizeHandle(message.handle);
   const participant = cfg.participants.get(handle);
   if (participant?.role !== 'tenant') return;
@@ -246,12 +285,24 @@ export async function prepareReport(db: PoolClient, cfg: Config, message: Messag
     text, messageId: prior.messageId ?? message.id,
     photo: mergedPhoto && { base64: mergedPhoto.bytes.toString('base64'), type: mergedPhoto.type },
   };
-  const interpreted = await identifyLeak(cfg, text, mergedPhoto, landmarks);
-  return { pending, interpreted, landmarks, point: landmarks.find((point) => point.id === picked) ?? interpreted.landmark };
+  // A numbered location reply only completes the earlier report, so it skips the agent.
+  const { interpreted, agent } = await interpretReport(db, cfg, handle, text, mergedPhoto, landmarks, picked ? undefined : model);
+  return { pending, interpreted, agent, landmarks, point: landmarks.find((point) => point.id === picked) ?? interpreted.landmark };
+}
+
+type PreparedReport = Exclude<Awaited<ReturnType<typeof prepareReport>>, undefined | { orderPhoto: unknown }>;
+
+async function fileReport(db: PoolClient, cfg: Config, handle: string, prepared: PreparedReport, point: Landmark, repair?: Repair) {
+  const orderId = await openReport(db, cfg, handle, prepared.pending, point, prepared.interpreted.description, repair);
+  const agent = prepared.agent;
+  if (!orderId || agent?.kind !== 'report') return;
+  const { severity, hazards } = agent.assessment;
+  await record(db, orderId, 'agent_triage', `Severity ${severity}${hazards.length ? ` · hazards: ${hazards.join(', ')}` : ''}`);
+  await recordAgentTrace(db, orderId, agent.trace);
 }
 
 export async function handleMessage(db: PoolClient, cfg: Config, message: Message,
-  prepared: Awaited<ReturnType<typeof prepareReport>>, photonProject?: string) {
+  prepared: Awaited<ReturnType<typeof prepareReport>>, photonProject?: string, managerPlan?: ManagerPlan) {
   const handle = normalizeHandle(message.handle);
   const participant = cfg.participants.get(handle);
   if (!participant) return;
@@ -267,7 +318,16 @@ export async function handleMessage(db: PoolClient, cfg: Config, message: Messag
       ? cfg.repairContext ? 'Send a photo, the street address and the room where you see the damage.' : 'Send a photo and tell me where you see the leak.'
       : 'You’re connected. I’ll text you about new work orders.');
   }
-  if (participant.role === 'manager') return managerReply(db, cfg, handle, message, conversation);
+  if (participant.role === 'manager') {
+    if (managerPlan?.kind === 'reply') return notify(db, handle, managerPlan.text);
+    if (managerPlan) await recordAgentTrace(db, managerPlan.orderId, managerPlan.trace);
+    if (managerPlan?.kind === 'fixed') {
+      await savePending(db, handle, { orderId: managerPlan.orderId, proposedFix: true });
+      return notify(db, handle, `Mark ${code(managerPlan.orderId)} repaired and ask the tenants to verify? Reply YES to confirm.`);
+    }
+    // A scheduling plan is an ordinary visit command, so managerReply re-validates it and asks for YES.
+    return managerReply(db, cfg, handle, managerPlan ? { ...message, text: managerPlan.text } : message, conversation);
+  }
   const update = tenantStatusReply.exec(message.text);
   if (update) {
     const id = update[2] ?? conversation.active_order;
@@ -291,6 +351,10 @@ export async function handleMessage(db: PoolClient, cfg: Config, message: Messag
     const { base64, type } = prepared.pending.photo;
     if (await addReportPhoto(db, cfg, handle, conversation.active_order, { bytes: Buffer.from(base64, 'base64'), type }, false)) return;
   }
+  if (prepared.agent?.kind === 'reply') {
+    await savePending(db, handle, prepared.agent.awaitingDetails ? prepared.pending : {});
+    return notify(db, handle, prepared.agent.message);
+  }
   const { interpreted } = prepared;
   if (!interpreted.isLeak && !(cfg.repairContext && interpreted.isDamage)) {
     await savePending(db, handle, {});
@@ -310,7 +374,7 @@ export async function handleMessage(db: PoolClient, cfg: Config, message: Messag
     repair = { address, propertyMatch, issue, aid: safeAid(`${prepared.pending.text} ${interpreted.description}`, issue, interpreted.temporaryAid) };
     if (!propertyMatch) {
       const point = prepared.point ?? { id: 'reported-location', suite: participant.suite!, label: 'Reported area', zoneId: 'reported', aliases: [], views: [] };
-      return openReport(db, cfg, handle, prepared.pending, point, interpreted.description, repair);
+      return fileReport(db, cfg, handle, prepared, point, repair);
     }
   }
   if (!prepared.point) {
@@ -318,5 +382,5 @@ export async function handleMessage(db: PoolClient, cfg: Config, message: Messag
     await savePending(db, handle, { ...pending, choices: landmarks.map((point) => point.id) });
     return notify(db, handle, `Where do you see it? Reply with a number.\n${landmarks.map((point, i) => `${i + 1}. ${point.label}`).join('\n')}`);
   }
-  return openReport(db, cfg, handle, prepared.pending, prepared.point, prepared.interpreted.description, repair);
+  return fileReport(db, cfg, handle, prepared, prepared.point, repair);
 }
