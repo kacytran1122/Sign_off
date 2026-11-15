@@ -15,6 +15,13 @@ export const damagePointInput = z.object({
   modelId: z.string().regex(/^[A-Za-z0-9]{1,128}$/),
 }).strict();
 
+const storedDamagePoint = damagePointInput.extend({ confirmed: z.literal(true) });
+
+export function confirmedDamageAnchor(input: unknown, modelId: string | undefined) {
+  const result = storedDamagePoint.safeParse(input);
+  return result.success && result.data.modelId === modelId ? result.data.anchor : undefined;
+}
+
 export function photoReviewUrl(config: Config, order: { access_key: string; inspection_key: string }, landmarkId: string) {
   if (!config.property.matterportModel || !config.matterportKey ||
       !config.property.landmarks.some((landmark) => landmark.id === landmarkId)) return;

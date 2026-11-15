@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { z } from 'zod';
 import type { Config } from './config.js';
+import { confirmedDamageAnchor } from './damage-point.js';
 import { guidance, repairEffects, type Aid, type Issue } from './repair.js';
 import { repairScenario } from './repair-scenario.js';
 import { planRoofInspection } from './inspection.js';
@@ -28,13 +29,35 @@ const reportArea = z.object({
 
 type ReportRow = {
   id: string; status: string; issue: Issue; aid: Aid; area: unknown; property_match: boolean;
-  landmarkId?: string; description?: string; renderStatus?: string; image?: Buffer;
+  landmarkId?: string; description?: string; damagePoint?: unknown; renderStatus?: string; image?: Buffer;
+  linkedDamagePoints?: { description: string; point: unknown }[] | null;
 };
+
+export const reportObservationJoins = `LEFT JOIN LATERAL (
+  SELECT id,landmark_id,description,CASE WHEN photo IS NOT NULL THEN damage_point END AS damage_point
+  FROM reports WHERE order_id=w.id ORDER BY id LIMIT 1
+) photo ON true
+LEFT JOIN LATERAL (
+  SELECT jsonb_agg(jsonb_build_object('description',description,'point',damage_point) ORDER BY id DESC) AS damage_points
+  FROM reports
+  WHERE order_id=w.id AND id<>photo.id AND landmark_id=photo.landmark_id AND reports.photo IS NOT NULL
+    AND damage_point->'confirmed'='true'::jsonb AND damage_point->>'modelId'=$3
+) linked ON true`;
 
 export function reportSnapshot(property: Config['property'], row: ReportRow) {
   const point = property.landmarks.find((landmark) => landmark.id === row.landmarkId);
   const scenario = repairScenario(row.issue, row.aid, row.description, row.property_match ? point?.label : undefined);
-  const inspection = point && row.property_match && scenario === 'ceiling-leak' ? planRoofInspection(property, point, row.aid) : undefined;
+  let inspection;
+  if (point && row.property_match && scenario === 'ceiling-leak') {
+    let anchor = confirmedDamageAnchor(row.damagePoint, property.matterportModel);
+    for (const observation of row.linkedDamagePoints ?? []) {
+      if (anchor) break;
+      if (repairScenario(row.issue, row.aid, observation.description, point.label) === scenario) {
+        anchor = confirmedDamageAnchor(observation.point, property.matterportModel);
+      }
+    }
+    inspection = planRoofInspection(property, point, row.aid, anchor);
+  }
   const area = reportArea.safeParse(row.area).data;
   if (area?.latitude !== undefined) area.latitude = Number(area.latitude.toFixed(3));
   if (area?.longitude !== undefined) area.longitude = Number(area.longitude.toFixed(3));
@@ -58,7 +81,7 @@ export function reportSnapshot(property: Config['property'], row: ReportRow) {
 export function startReportPublisher(db: Pool, config: Config) {
   if (!config.reportPublish) return;
   const { origin, token } = config.reportPublish;
-  const evidenceVersion = createHash('sha256').update('report-v4:').update(JSON.stringify(config.property)).digest('hex');
+  const evidenceVersion = createHash('sha256').update('report-v5:').update(JSON.stringify(config.property)).digest('hex');
   let active: Promise<void> | undefined;
 
   async function publish() {
@@ -79,16 +102,18 @@ export function startReportPublisher(db: Pool, config: Config) {
   async function publishNext(client: PoolClient) {
     const { rows: [row] } = await client.query<ReportRow & { key: string; revision: string }>(`
       SELECT w.id,w.access_key AS key,w.status,r.issue,r.aid,r.area,r.property_match,
-        photo.landmark_id AS "landmarkId",photo.description,b.status AS "renderStatus",b.image,
+        photo.landmark_id AS "landmarkId",photo.description,photo.damage_point AS "damagePoint",
+        linked.damage_points AS "linkedDamagePoints",b.status AS "renderStatus",b.image,
         source.revision
       FROM work_orders w JOIN repair_contexts r ON w.id=r.order_id
       LEFT JOIN blender_renders b ON b.order_id=w.id AND b.aid IS NOT NULL
       LEFT JOIN report_publications p ON p.order_id=w.id
-      LEFT JOIN LATERAL (SELECT landmark_id,description FROM reports WHERE order_id=w.id ORDER BY id LIMIT 1) photo ON true
-      CROSS JOIN LATERAL (SELECT jsonb_build_array($2::text,w.status,r.updated_at,b.status,b.completed_at,b.attempts,r.issue,r.aid,md5(photo.description))::text AS revision) source
+      ${reportObservationJoins}
+      CROSS JOIN LATERAL (SELECT jsonb_build_array($2::text,w.status,r.updated_at,b.status,b.completed_at,b.attempts,r.issue,r.aid,
+        md5(photo.description),md5(photo.damage_point::text),md5(linked.damage_points::text))::text AS revision) source
       WHERE w.property_id=$1 AND p.revision IS DISTINCT FROM source.revision
         AND (p.retry_after IS NULL OR p.retry_after<=now())
-      ORDER BY w.created_at DESC LIMIT 1`, [config.property.id, evidenceVersion]);
+      ORDER BY w.created_at DESC LIMIT 1`, [config.property.id, evidenceVersion, config.property.matterportModel ?? null]);
     if (!row) return;
     try {
       const response = await fetch(`${origin}/internal/reports/${row.key}`, {

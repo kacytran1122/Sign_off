@@ -23,8 +23,32 @@ const property: Property = {
 test('a matched single-story room gets an indoor-first inspection plan', () => {
   const plan = planRoofInspection(property, room, 'bucket');
   assert.equal(plan?.steps.length, 2);
-  assert.match(plan.steps[0], /lobby ceiling.*indoors/);
-  assert.match(plan.steps[1], /If the indoor inspection points overhead/);
+  assert.match(plan.steps[0], /lobby ceiling.*indoors.*Matterport/);
+  assert.match(plan.steps[1], /If the indoor inspection points overhead.*Vexcel.*Lobby roof area/);
+});
+
+test('a confirmed Matterport spot narrows the Vexcel check only inside the matched roof zone', () => {
+  const calibrated: Property = {
+    ...property, roof: {
+      ...property.roof,
+      projection: { u: [.1, 0, .1], v: [0, .1, .1], hull: [[0, 0], [6, 0], [6, 6], [0, 6]] },
+    },
+  };
+  const inside = planRoofInspection(calibrated, room, 'bucket', { x: 1.5, y: 2, z: -1.5 });
+  assert.match(inside?.steps[0] ?? '', /manager matched to a tenant photo in Matterport/);
+  assert.match(inside?.steps[1] ?? '', /use the projected spot inside “Lobby roof area” to narrow the Vexcel roof check/);
+
+  const outside = planRoofInspection(calibrated, room, 'bucket', { x: 3, y: 2, z: -2 });
+  assert.match(outside?.steps[1] ?? '', /projects outside the mapped roof area/);
+  assert.match(outside?.summary ?? '', /verify the room-to-roof alignment on site/);
+
+  const atUnmappedPoint = planRoofInspection(calibrated, room, 'bucket', { x: 9, y: 2, z: -2 });
+  assert.match(atUnmappedPoint?.steps[1] ?? '', /An on-site check is needed.*before assigning a roof target/);
+  assert.doesNotMatch(atUnmappedPoint?.summary ?? '', /use the mapped roof target/);
+
+  assert.equal(planRoofInspection({
+    ...calibrated, costar: { storiesAboveGrade: 2 },
+  }, room, 'bucket', { x: 1.5, y: 2, z: -1.5 }), undefined);
 });
 
 test('a potential hazard gets assessed before entering the room', () => {
