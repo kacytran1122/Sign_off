@@ -52,6 +52,7 @@ const actions: Record<string, string> = {
   opened: 'Report received', inspection_planned: 'Inspection plan created', report_linked: 'Related report linked', reminder: 'Manager reminded',
   scheduled: 'Inspection scheduled', repair_reported: 'Repair reported', reopened: 'Work order reopened',
   closed: 'Work order closed', tenant_confirmed: 'Tenant confirmed', photo_added: 'Photo added', damage_point_confirmed: 'Damage spot confirmed',
+  agent_trace: 'Agents involved', agent_triage: 'Safety triage', agent_brief: 'Evidence brief', agent_snooze: 'Follow-up scheduled',
 };
 
 function usePoll<T>(url?: string) {
@@ -83,13 +84,13 @@ function usePoll<T>(url?: string) {
   return { data, error, setData };
 }
 
-function Header({ demo, workspace }: { demo?: boolean; workspace?: boolean }) {
+function Header({ demo, workspace, multiAgent }: { demo?: boolean; workspace?: boolean; multiAgent?: boolean }) {
   return <header className={workspace ? demoStyles.header : 'topbar'}><div className={workspace ? demoStyles.headerInner : 'topbar-inner'}>
     <a className={workspace ? demoStyles.brand : 'brand'} href="/" aria-label="Signoff home">
       <SignoffLogo variant={workspace ? 'dark' : 'light'} />
     </a>
     {workspace ? <div className={demoStyles.headerLinks}>
-      {demo && <span className={demoStyles.mode}>Local demo</span>}
+      {(demo || multiAgent) && <span className={demoStyles.mode}>{multiAgent ? (demo ? 'Multi-agent demo' : 'Multi-agent') : 'Local demo'}</span>}
       <a href="/#how">How it works</a>
     </div> : demo && <a className="demo-label" href="/app">Local demo</a>}
   </div></header>;
@@ -467,7 +468,7 @@ type Demo = {
   messages: { target: string; body: string; created_at: string }[];
 };
 export function DemoPage() {
-  const health = usePoll<{ mode: 'live' | 'photon-test' | 'photon-sponsor' | 'demo' }>('/healthz');
+  const health = usePoll<{ mode: 'live' | 'photon-test' | 'photon-sponsor' | 'demo'; agentMode?: 'multi' | 'standard' }>('/healthz');
   const { data, error } = usePoll<Demo>(health.data?.mode === 'demo' ? '/api/demo' : undefined);
   const [role, setRole] = useState<Role>('tenant');
   const [text, setText] = useState('');
@@ -520,7 +521,7 @@ export function DemoPage() {
   const mode = health.data?.mode;
   const live = mode && mode !== 'demo';
   return <div className={demoStyles.surface}>
-    <Header workspace demo={mode === 'demo'} />
+    <Header workspace demo={mode === 'demo'} multiAgent={health.data?.agentMode === 'multi'} />
     <main>
       <section className={demoStyles.intro} aria-labelledby="workspace-title">
         <div className={demoStyles.container}>

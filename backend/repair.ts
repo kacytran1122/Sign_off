@@ -28,12 +28,12 @@ export function repairTimeZone(address: string | undefined, fallback: string, ob
 }
 
 export function safeAid(text: string, issue: Issue, suggested?: Aid): Aid {
+  if (suggested === 'clear') return 'clear';
   if (/\b(?:sag\w*|bulg\w*|collaps\w*|sparks?|wires?|electri\w*|outlets?|sewage|flood\w*)\b/i.test(text)) return 'clear';
   if (issue === 'damage') {
     return suggested === 'stair-sign' || /\b(?:stairs?|staircase|stairwell|stairway|tread|step)\b/i.test(text)
       ? 'stair-sign' : 'clear';
   }
-  if (suggested === 'clear') return 'clear';
   if (/\b(?:drip\w*|ceiling)\b/i.test(text)) return 'bucket';
   return suggested === 'towel' || /\b(?:puddle|spill)\b/i.test(text) ? 'towel' : 'bucket';
 }

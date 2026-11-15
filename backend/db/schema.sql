@@ -97,3 +97,13 @@ CREATE TABLE IF NOT EXISTS outbox (
 ALTER TABLE outbox ADD COLUMN IF NOT EXISTS render_order_id bigint REFERENCES work_orders (id) ON DELETE CASCADE;
 ALTER TABLE outbox ADD COLUMN IF NOT EXISTS is_render boolean NOT NULL DEFAULT false;
 ALTER TABLE outbox ADD COLUMN IF NOT EXISTS photo_report_id bigint REFERENCES reports (id) ON DELETE CASCADE;
+CREATE TABLE IF NOT EXISTS agent_tasks (
+  id bigserial PRIMARY KEY,
+  agent text NOT NULL CHECK (agent IN ('evidence')),
+  order_id bigint NOT NULL REFERENCES work_orders (id) ON DELETE CASCADE,
+  status text NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'done', 'failed')),
+  attempts integer NOT NULL DEFAULT 0,
+  run_after timestamptz NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS agent_tasks_queue ON agent_tasks (status, run_after);

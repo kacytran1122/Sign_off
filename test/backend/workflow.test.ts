@@ -115,6 +115,7 @@ test('stair reports warn about falls and distinguish neighborhood data from site
   const aid = safeAid('Broken step in the shared stairwell', 'damage', 'bucket');
   assert.equal(aid, 'stair-sign');
   assert.equal(safeAid('Structural collapse at the stairs', 'damage', 'stair-sign'), 'clear');
+  assert.equal(safeAid('Damaged stair tread', 'damage', 'clear'), 'clear');
   const manager = managerReport({ code: 'L-3', address: '200 N Spring St, Los Angeles, CA',
     description: 'Tenant described a broken wooden step.', issue: 'damage', aid, hasPhoto: false, demo: true });
   assert.match(manager, /DEMO.*Urgent inspection/);
