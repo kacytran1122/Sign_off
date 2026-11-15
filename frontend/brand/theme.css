@@ -1,0 +1,28 @@
+@font-face {
+  font-family: 'Instrument Sans';
+  src: url('../landing/fonts/instrument-sans.woff2') format('woff2');
+  font-weight: 400 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Instrument Serif';
+  src: url('../landing/fonts/instrument-serif.woff2') format('woff2');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Instrument Serif';
+  src: url('../landing/fonts/instrument-serif-italic.woff2') format('woff2');
+  font-style: italic;
+  font-display: swap;
+}
+
+:root {
+  --signoff-font-sans: 'Instrument Sans', system-ui, sans-serif;
+  --signoff-font-serif: 'Instrument Serif', Georgia, serif;
+  --signoff-ink: #241a22;
+  --signoff-muted: #62535e;
+  --signoff-plum: #592346;
+  --signoff-plum-deep: #422037;
+  --signoff-paper: #fffcf8;
+  --signoff-rule: #e8dfe5;
+}

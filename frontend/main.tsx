@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { FormEvent, MouseEvent } from 'react';
 import type { Showcase } from '@matterport/sdk';
 import { SignoffLogo } from './brand/SignoffLogo';
+import demoStyles from './workspace/demo.module.css';
 
 type Vector = { x: number; y: number; z: number };
 type DamagePlacement = { anchor: Vector; stem: Vector; sweep?: string };
@@ -82,10 +83,15 @@ function usePoll<T>(url?: string) {
   return { data, error, setData };
 }
 
-function Header({ demo }: { demo?: boolean }) {
-  return <header className="topbar"><div className="topbar-inner">
-    <a className="brand" href="/" aria-label="Signoff home"><SignoffLogo variant="light" /></a>
-    {demo && <a className="demo-label" href="/app">Local demo</a>}
+function Header({ demo, workspace }: { demo?: boolean; workspace?: boolean }) {
+  return <header className={workspace ? demoStyles.header : 'topbar'}><div className={workspace ? demoStyles.headerInner : 'topbar-inner'}>
+    <a className={workspace ? demoStyles.brand : 'brand'} href="/" aria-label="Signoff home">
+      <SignoffLogo variant={workspace ? 'dark' : 'light'} />
+    </a>
+    {workspace ? <div className={demoStyles.headerLinks}>
+      {demo && <span className={demoStyles.mode}>Local demo</span>}
+      <a href="/#how">How it works</a>
+    </div> : demo && <a className="demo-label" href="/app">Local demo</a>}
   </div></header>;
 }
 function Badge({ status }: { status: Status }) {
@@ -468,6 +474,7 @@ export function DemoPage() {
   const [image, setImage] = useState<File>();
   const [notice, setNotice] = useState('');
   const [sending, setSending] = useState(false);
+  const photoInput = useRef<HTMLInputElement>(null);
   const [sent, setSent] = useState<Record<string, { body: string; created_at: string }[]>>({});
   const choices = role === 'manager' ? ['Tuesday 2 to 4 PM', 'YES', 'FIXED']
     : role === 'tenant2' ? ['Water stain by the studio window', 'Still leaking', 'Resolved']
@@ -476,6 +483,14 @@ export function DemoPage() {
   const messages = [...(data?.messages.filter((m) => m.target === handle).map((m) => ({ ...m, outgoing: false })) ?? []),
     ...(sent[role]?.map((m) => ({ ...m, outgoing: true })) ?? [])]
     .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+  function changeRole(nextRole: Role) {
+    if (nextRole === role || sending) return;
+    setRole(nextRole);
+    setText('');
+    setImage(undefined);
+    setNotice('');
+    if (photoInput.current) photoInput.current.value = '';
+  }
   async function send(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!text.trim() && !image) return;
@@ -502,47 +517,76 @@ export function DemoPage() {
     } catch (err) { setNotice(err instanceof Error ? err.message : 'Message could not be sent.'); }
     finally { setSending(false); }
   }
-  if (health.data && health.data.mode !== 'demo') return <><Header /><main className="page">
-    <section className="heading"><div><h1>Signoff</h1>
-      <p className="subtitle">{health.data.mode === 'photon-test'
-        ? 'Live iMessage test with a fictional property. Text your assigned line to start.'
-        : 'Text your building’s repair line to report a leak. Open a work-order link from your conversation to view its evidence.'}</p></div></section>
-  </main></>;
-  return <><Header demo={!!data} /><main className="page">
-    <section className="heading">
-      <div><p className="eyebrow">Repair workflow</p><h1>From report to repair.</h1>
-        <p className="subtitle">{data ? 'Local rehearsal with a fictional property and simulated messages.' : error || health.error || 'Loading workspace…'}</p></div>
-    </section>
-    {data && <div className="demo-grid">
-      <section className="panel composer">
-        <div className="panel-head"><h2>Conversations</h2></div>
-        <div className="roles" aria-label="Simulated sender">{([['tenant', 'Tenant'], ['manager', 'Manager'], ['tenant2', 'Tenant 2']] as const).map(([id, label]) =>
-          <button key={id} type="button" aria-pressed={role === id} onClick={() => { setRole(id); setText(''); }}>{label}</button>,
-        )}</div>
-        <div className="thread" role="log" aria-live="polite">{messages.length ? messages.map((msg, index) =>
-          <p key={`${msg.created_at}-${index}`} className={msg.outgoing ? 'bubble outgoing' : 'bubble'}>{msg.body}</p>,
-        ) : <p className="empty">Send a message to start the conversation.</p>}</div>
-        <form onSubmit={send} className="send-form">
-          <div className="examples" aria-label="Example messages">{choices.map((choice) =>
-            <button type="button" key={choice} onClick={() => setText(choice)}>{choice}</button>,
-          )}</div>
-          <label htmlFor="message" className="sr-only">Message</label>
-          <textarea id="message" placeholder="Write a message…" value={text} onChange={(e) => setText(e.target.value)} rows={2} maxLength={2000} />
-          <div className="send-actions"><input id="photo" type="file" aria-label="Attach a photo" accept="image/jpeg,image/png,image/webp" onChange={(e) => {
-            const chosen = e.target.files?.[0];
-            if (chosen && chosen.size > 4 * 1024 * 1024) { setNotice('Choose a photo under 4 MB.'); setImage(undefined); e.target.value = ''; return; }
-            setNotice(''); setImage(chosen);
-          }} /><button className="primary" disabled={sending || (!text.trim() && !image)}>Send</button></div>
-          {notice && <p className="notice" role="status">{notice}</p>}
-        </form>
+  const mode = health.data?.mode;
+  const live = mode && mode !== 'demo';
+  return <div className={demoStyles.surface}>
+    <Header workspace demo={mode === 'demo'} />
+    <main>
+      <section className={demoStyles.intro} aria-labelledby="workspace-title">
+        <div className={demoStyles.container}>
+          <p className={demoStyles.eyebrow}>Repair workspace</p>
+          <h1 id="workspace-title">{live ? 'Signoff' : <>From report to <em>repair.</em></>}</h1>
+          {live ? <p>{mode === 'photon-test'
+            ? 'Live iMessage test with a fictional property. Text your assigned line to start.'
+            : 'Text your building’s repair line to report a leak. Open a work-order link from your conversation to view its evidence.'}</p>
+            : <p>{data ? 'Send a report as the tenant, then switch to the manager to schedule a visit. This demo uses a fictional property.'
+              : error || health.error || 'Loading workspace…'}</p>}
+        </div>
       </section>
-      <section className="panel orders"><div className="panel-head"><h2>Work orders</h2></div>
-        {data.orders.length ? data.orders.map((order) => <a key={order.id} className="order-row" href={`/work-orders/${order.access_key}`}>
-          <span><strong>L-{order.id} · Ceiling leak</strong><small>View inspection evidence</small></span><Badge status={order.status} />
-        </a>) : <p className="empty">New reports appear here once the location is confirmed.</p>}
-      </section>
-    </div>}
-  </main></>;
+      {!live && data && <div className={`${demoStyles.container} ${demoStyles.grid}`}>
+        <section className={demoStyles.card} aria-labelledby="conversations-title">
+          <div className={demoStyles.cardHeader}>
+            <h2 id="conversations-title">Conversations</h2>
+            <div className={demoStyles.sender}>
+              <span id="sender-title">Send as</span>
+              <div className={demoStyles.roles} role="group" aria-labelledby="sender-title">
+                {([['tenant', 'Tenant'], ['manager', 'Manager'], ['tenant2', 'Tenant 2']] as const).map(([id, label]) =>
+                  <button key={id} type="button" aria-pressed={role === id} disabled={sending} onClick={() => changeRole(id)}>{label}</button>,
+                )}
+              </div>
+            </div>
+          </div>
+          <div className={demoStyles.thread} role="log" aria-label="Repair messages" aria-live="polite" tabIndex={0}>{messages.length ? messages.map((msg, index) =>
+            <p key={`${msg.created_at}-${index}`} className={msg.outgoing ? demoStyles.outgoing : demoStyles.incoming}>{msg.body}</p>,
+          ) : <div className={demoStyles.threadEmpty}>
+            <span className={demoStyles.conversationIcon} aria-hidden="true" />
+            <p>Send a message to start the conversation.</p>
+          </div>}</div>
+          <form onSubmit={send} className={demoStyles.composer}>
+            <div className={demoStyles.examples} role="group" aria-label="Example messages">{choices.map((choice) =>
+              <button type="button" key={choice} onClick={() => setText(choice)}>{choice}</button>,
+            )}</div>
+            <label htmlFor="message" className="sr-only">Message</label>
+            <textarea id="message" placeholder="Write a message…" value={text} onChange={(e) => setText(e.target.value)} rows={2} maxLength={2000} />
+            <div className={demoStyles.sendActions}>
+              <label className={demoStyles.attachment}>
+                <input ref={photoInput} id="photo" type="file" className="sr-only" aria-label="Attach a photo" accept="image/jpeg,image/png,image/webp" onChange={(e) => {
+                  const chosen = e.target.files?.[0];
+                  if (chosen && chosen.size > 4 * 1024 * 1024) { setNotice('Choose a photo under 4 MB.'); setImage(undefined); e.target.value = ''; return; }
+                  setNotice(''); setImage(chosen);
+                }} />
+                <span title={image?.name}>{image?.name ?? 'Attach a photo'}</span>
+              </label>
+              <button className={demoStyles.send} disabled={sending || (!text.trim() && !image)}>Send</button>
+            </div>
+            {notice && <p className={demoStyles.notice} role="status">{notice}</p>}
+          </form>
+        </section>
+        <section className={`${demoStyles.card} ${demoStyles.orders}`} aria-labelledby="orders-title">
+          <div className={demoStyles.cardHeader}><h2 id="orders-title">Work orders</h2></div>
+          {data.orders.length ? <ul className={demoStyles.orderList}>{data.orders.map((order) => <li key={order.id}>
+            <a className={demoStyles.orderRow} href={`/work-orders/${order.access_key}`}>
+              <span><strong>L-{order.id} · Ceiling leak</strong><small>View inspection evidence</small></span><Badge status={order.status} />
+            </a>
+          </li>)}</ul> : <div className={demoStyles.ordersEmpty}>
+            <span className={demoStyles.documentIcon} aria-hidden="true" />
+            <p><strong>No work orders yet</strong></p>
+            <p>New reports appear here once the location is confirmed.</p>
+          </div>}
+        </section>
+      </div>}
+    </main>
+  </div>;
 }
 export function SharedReport({ access }: { access: string }) {
   const url = `/api/reports/${encodeURIComponent(access)}`;

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import '../brand/theme.css';
 import './base.css';
 
 export const metadata: Metadata = {

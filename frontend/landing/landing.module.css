@@ -1,34 +1,16 @@
-@font-face {
-  font-family: 'Instrument Sans';
-  src: url('./fonts/instrument-sans.woff2') format('woff2');
-  font-weight: 400 700;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Instrument Serif';
-  src: url('./fonts/instrument-serif.woff2') format('woff2');
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Instrument Serif';
-  src: url('./fonts/instrument-serif-italic.woff2') format('woff2');
-  font-style: italic;
-  font-display: swap;
-}
-
 .landing {
-  --ink: #241a22;
-  --quiet: #62535e;
-  --plum: #592346;
-  --plum-deep: #422037;
+  --ink: var(--signoff-ink);
+  --quiet: var(--signoff-muted);
+  --plum: var(--signoff-plum);
+  --plum-deep: var(--signoff-plum-deep);
   --plum-ink: #301428;
-  --rule: #e8dfe5;
-  --paper: #fffcf8;
-  --serif: 'Instrument Serif', Georgia, serif;
+  --rule: var(--signoff-rule);
+  --paper: var(--signoff-paper);
+  --serif: var(--signoff-font-serif);
   min-height: 100vh;
   background: var(--paper);
   color: var(--ink);
-  font: 400 16px/1.55 'Instrument Sans', sans-serif;
+  font: 400 16px/1.55 var(--signoff-font-sans);
   -webkit-font-smoothing: antialiased;
 }
 .landing *, .landing *::before, .landing *::after { box-sizing: border-box; }
@@ -119,94 +101,146 @@
 .actions { display: flex; flex-wrap: wrap; gap: .65rem; margin-top: 1.65rem; }
 .actions .primary, .actions .secondary { min-height: 3.05rem; padding-inline: 1.3rem; }
 
-.messagePhoto { background: #dfcdb9 url('./ceiling-repair.jpg') no-repeat left 57% / 200% auto; aspect-ratio: 2 / 1; }
-
-.how { padding-block: clamp(4.5rem, 8vw, 7rem); }
-.sectionIntro { display: grid; justify-items: start; gap: .85rem; }
-.sectionIntro h2 { max-width: 18ch; text-wrap: balance; }
-.sectionIntro > p:last-child { max-width: 47ch; color: var(--quiet); font-size: 1.08rem; }
-.steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(.9rem, 2vw, 1.35rem); padding: 0; margin: 2.5rem 0 0; list-style: none; }
-.step { display: grid; grid-template-rows: auto 1fr; gap: 1.1rem; min-width: 0; padding: .65rem; border: 1px solid var(--rule); border-radius: 1.25rem; background: #fffefd; }
-.stepVisual { display: grid; place-items: center; min-height: clamp(12rem, 19vw, 16rem); border-radius: .85rem; padding: 1rem; overflow: hidden; }
-.reportVisual { background: radial-gradient(ellipse at 18% 0, #f9e5db, #ebd9e5 85%); }
-.planVisual { background: radial-gradient(ellipse at 17% 10%, #f8eacb, #eee0cf); }
-.doneVisual { background: radial-gradient(ellipse at 80% 3%, #f3e7ed, #e4d8e7); }
-.stepCopy { padding: 0 .7rem .8rem; }
-.stepCopy h3 { font-size: 1.13rem; line-height: 1.23; margin-bottom: .35rem; }
-.stepCopy p, .roles p { color: var(--quiet); font-size: .95rem; }
-.photoCard { max-width: 13.3rem; width: 90%; border-radius: .7rem .7rem .2rem .7rem; background: var(--plum); color: white; padding: .45rem; font-size: .78rem; box-shadow: 0 .8rem 1.7rem #481e3930; transform: rotate(-3deg); }
-.photoCard .messagePhoto { border-radius: .44rem; }
-.photoCard p { padding: .47rem .27rem .19rem; }
-.visitCard { width: min(100%, 14rem); padding: 1.1rem 1rem; display: grid; gap: .2rem; border: 1px solid #f0dbbf; border-radius: .85rem; background: #fffdf8; box-shadow: 0 .9rem 1.7rem #694e3b25; transform: rotate(2deg); }
-.visitCard > span { color: var(--plum); font-size: .68rem; font-weight: 700; }
-.visitCard strong { font: 400 1.8rem/1.05 var(--serif); }
-.visitCard p { color: var(--quiet); font-size: .76rem; }
-.completion { --signoff-logo-size: 2.8rem; display: grid; justify-items: center; align-content: center; gap: .18rem; width: min(100%, 13.25rem); min-height: 8.3rem; border: 1px solid #fff9; border-radius: 1.05rem; background: #fffcf8; box-shadow: 0 .8rem 1.5rem #533c4c20; }
-.completion strong { color: var(--plum); font-size: 1.16rem; }
-.completion p { color: var(--quiet); font-size: .75rem; }
-
-.workspaceShowcase {
-  background: radial-gradient(ellipse at 86% 47%, #ecdcea 0, transparent 61%),
-    radial-gradient(ellipse at 0 95%, #f4e6ce 0, transparent 68%), #f7f1ed;
-  border-block: 1px solid #eadfe3;
-  padding-block: clamp(3.4rem, 7vw, 6.25rem);
+.how { padding-block: clamp(4.25rem, 8vw, 7rem) clamp(2.25rem, 4vw, 3.65rem); }
+.sectionIntro {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, .65fr);
+  align-items: end;
+  gap: .75rem clamp(1.25rem, 5.5vw, 5.5rem);
 }
-.workspaceIntro { display: grid; grid-template-columns: 1.15fr 1fr; gap: 1.35rem; align-items: end; margin-bottom: clamp(1.55rem, 4vw, 3rem); }
-.workspaceIntro p { max-width: 43ch; color: var(--quiet); font-size: 1.08rem; }
-.captureGrid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr); gap: clamp(1rem, 3vw, 2.3rem); align-items: center; }
-.capture { min-width: 0; }
+.sectionIntro .eyebrow { grid-column: 1 / -1; }
+.sectionIntro h2 { max-width: 18ch; text-wrap: balance; }
+.sectionIntro > p:last-child, .workspaceIntro p, .proofCopy p {
+  color: var(--quiet);
+  max-width: 42ch;
+  font-size: clamp(1.025rem, 1.5vw, 1.18rem);
+}
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 0;
+  margin: clamp(1.7rem, 4vw, 3rem) 0 0;
+  list-style: none;
+  border-block: 1px solid var(--rule);
+}
+.step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-content: start;
+  align-items: start;
+  gap: .8rem;
+  padding: clamp(1.25rem, 2.3vw, 2rem) clamp(.7rem, 2.2vw, 1.65rem);
+}
+.step:first-child { padding-inline-start: 0; }
+.step + .step { border-inline-start: 1px solid var(--rule); }
+.stepNumber {
+  display: grid;
+  place-items: center;
+  width: 1.82rem;
+  height: 1.82rem;
+  border-radius: 50%;
+  background: #f0e3ec;
+  color: var(--plum);
+  font-size: .79rem;
+  font-weight: 650;
+}
+.step h3 { font-size: 1.04rem; line-height: 1.25; margin: .18rem 0 .35rem; }
+.step p, .roles dd { color: var(--quiet); font-size: .96rem; }
+
+.workspaceShowcase { padding-block-end: clamp(3.75rem, 8vw, 7rem); }
+.featureStage {
+  padding: clamp(1.45rem, 4.4vw, 4rem);
+  border: 1px solid #e5d7df;
+  border-radius: clamp(1.1rem, 2.7vw, 2rem);
+  background: radial-gradient(ellipse at 90% 18%, #f8e9e7 4%, transparent 56%),
+    radial-gradient(ellipse at 1% 100%, #f4e3ca 0, transparent 56%),
+    linear-gradient(150deg, #fdf6ee 5%, #eee1ed 76%, #f1e8f0);
+}
+.workspaceIntro {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr);
+  gap: clamp(.9rem, 3.3vw, 3.1rem);
+  align-items: end;
+  margin-bottom: clamp(1.5rem, 4vw, 2.8rem);
+}
+.workspaceIntro h2 { font-size: clamp(2.75rem, 5vw, 5rem); max-width: 17ch; text-wrap: balance; }
+.captureGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(1.3rem, 3.25vw, 2.75rem);
+}
 .capture img {
   display: block;
   width: 100%;
   height: auto;
   background: #fffcf8;
-  border: 1px solid #cfbfca;
-  border-radius: clamp(.65rem, 1.5vw, 1.2rem);
-  box-shadow: 0 .95rem 2.15rem #523b4b22;
+  border: 1px solid #d6c7d1;
+  border-radius: clamp(.55rem, 1.5vw, 1rem);
+  box-shadow: 0 .85rem 2rem #4e314725, 0 .2rem .45rem #41233812;
 }
-.capture figcaption { margin-top: .58rem; color: var(--quiet); font-size: .77rem; }
+.capture figcaption { margin-top: .7rem; color: var(--plum-deep); font-size: .86rem; font-weight: 600; }
 .timelineCapture { max-width: 25rem; }
+.featureStage .captureCredit { margin-top: clamp(.9rem, 1.6vw, 1.35rem); color: var(--quiet); font-size: .76rem; }
 
-.proof { background: #fffbf6; border-bottom: 1px solid #efe6e1; }
-.proofGrid { display: grid; grid-template-columns: minmax(0, .86fr) minmax(0, 1.14fr); align-items: center; gap: clamp(2rem, 8vw, 6.3rem); padding-block: clamp(3.45rem, 8vw, 6rem); }
-.proofCopy p { margin-top: 1.15rem; color: var(--quiet); font-size: 1.08rem; max-width: 43ch; }
-.comparison {
+.proof { background: #f8eee9; border-block: 1px solid #efe4e1; }
+.proofGrid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: .65rem;
-  padding: clamp(.65rem, 2vw, 1.25rem);
-  border: 1px solid #eddee4;
-  border-radius: 1.4rem;
-  background: radial-gradient(ellipse at 0 0, #f7e7d3, #f2e6ef 88%);
+  grid-template-columns: minmax(0, .82fr) minmax(0, 1.18fr);
+  align-items: center;
+  gap: clamp(1.65rem, 7vw, 6.1rem);
+  padding-block: clamp(3.45rem, 8vw, 6rem);
 }
-.comparison > div { display: grid; gap: .45rem; }
-.comparison > div:nth-child(2) { margin-top: clamp(.5rem, 4vw, 2rem); }
-.beforePhoto, .afterPhoto { min-width: 0; aspect-ratio: 4 / 4.65; border-radius: .85rem; background: #dfd1be url('./ceiling-repair.jpg') no-repeat left center / 200% auto; }
-.afterPhoto { background-position: right center; }
-.comparison span, .comparison figcaption { color: var(--quiet); font-size: .77rem; }
-.comparison > div:nth-child(2) span { color: var(--plum); font-weight: 600; }
-.comparison figcaption { grid-column: 1 / -1; text-align: right; }
-.who { padding-block: clamp(4rem, 8vw, 7rem) clamp(2rem, 5vw, 4.5rem); }
-.roles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.25rem; margin-top: 1.35rem; }
-.roles article { min-width: 0; padding: clamp(1.15rem, 3vw, 2.25rem); border: 1px solid var(--rule); border-radius: 1.05rem; background: #fbf1e5; }
-.roles article:nth-child(2) { background: #f6ebf2; }
-.roles article:nth-child(3) { background: #f8f4e9; }
-.roles h3 { margin-bottom: .5rem; color: var(--plum-deep); font: 400 clamp(1.9rem, 3vw, 2.7rem)/1 var(--serif); }
+.proofCopy h2 { max-width: 14ch; text-wrap: balance; }
+.proofCopy p { margin-top: 1.15rem; }
+.comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem; }
+.comparison > div { display: grid; gap: .58rem; }
+.beforePhoto, .afterPhoto {
+  aspect-ratio: 4 / 4.55;
+  background: #dfd1be url('./ceiling-repair.jpg') no-repeat left center / 200% auto;
+}
+.beforePhoto { border-radius: 1rem .3rem .3rem 1rem; }
+.afterPhoto { background-position: right center; border-radius: .3rem 1rem 1rem .3rem; }
+.comparison span, .comparison figcaption { color: var(--quiet); font-size: .8rem; }
+.comparison span { display: block; padding-inline: .2rem; }
+.comparison > div:nth-child(2) span { color: var(--plum); font-weight: 650; }
+.comparison figcaption { grid-column: 1 / -1; text-align: right; font-size: .74rem; }
+
+.who {
+  display: grid;
+  grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+  align-items: start;
+  gap: clamp(1.2rem, 5vw, 4.5rem);
+  padding-block: clamp(4rem, 8vw, 7rem) clamp(2.75rem, 6vw, 5rem);
+}
+.roles { margin: .35rem 0 0; border-top: 1px solid var(--rule); }
+.roles > div {
+  display: grid;
+  grid-template-columns: minmax(0, .65fr) minmax(0, 1.35fr);
+  align-items: start;
+  gap: .8rem 1.25rem;
+  padding-block: 1.12rem;
+  border-bottom: 1px solid var(--rule);
+}
+.roles dt { color: var(--plum-deep); font: 400 clamp(1.6rem, 2.65vw, 2.25rem)/1 var(--serif); }
+.roles dd { margin: 0; }
 .finish { padding-bottom: clamp(3.3rem, 7vw, 6rem); }
 .finishCard {
+  min-height: clamp(13rem, 22vw, 18rem);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1.9rem;
-  padding: clamp(2.1rem, 6vw, 4.2rem);
-  border-radius: 1.3rem;
-  background: radial-gradient(ellipse at 98% 8%, #814260, transparent 62%),
-    radial-gradient(ellipse at 28% 125%, #5e313e, transparent 56%), var(--plum-ink);
+  gap: 1.55rem;
+  padding: clamp(1.65rem, 5vw, 3.85rem);
+  border-radius: clamp(1.1rem, 2.7vw, 2rem);
+  background: linear-gradient(87deg, #301428 12%, #301428f5 43%, #30142866 100%),
+    #301428 url('./courtyard-hero.webp') center 80% / cover;
   color: #fff8f3;
 }
-.finishCard h2 { font-size: clamp(3.35rem, 6vw, 5.8rem); }
-.finishCard h2 em { color: #ecd196; }
-.finishCard p { max-width: 48ch; margin-top: .85rem; color: #f1e2ec; }
+.finishCard h2 { font-size: clamp(3.25rem, 6vw, 5.5rem); }
+.finishCard h2 em { color: #f3dbac; }
+.finishCard p { max-width: 47ch; margin-top: .85rem; color: #f9ecf5; }
+.finishCard :focus-visible { outline-color: #ffe6c5; }
 .landing .finalLink { flex: none; background: #fffaf2; color: var(--plum-ink); }
 .landing .finalLink:hover { background: #f5e1cb; }
 .footer { border-top: 1px solid var(--rule); }
@@ -233,17 +267,24 @@
   .hero h1 { font-size: clamp(3.55rem, 10.4vw, 5.25rem); }
   .heroCopy .heroDescription { margin-top: .95rem; }
   .actions { margin-top: 1.15rem; }
-  .steps, .roles, .proofGrid, .workspaceIntro, .captureGrid { grid-template-columns: 1fr; }
-  .steps { margin-top: 1.75rem; }
-  .stepVisual { min-height: 12rem; }
-  .comparison { width: min(100%, 31rem); }
-  .finishCard { align-items: start; flex-direction: column; }
+  .sectionIntro, .steps, .who, .proofGrid, .workspaceIntro, .captureGrid { grid-template-columns: 1fr; }
+  .step { padding-inline: 0; }
+  .step + .step { border-inline: 0; border-top: 1px solid var(--rule); }
+  .workspaceIntro { margin-bottom: 1.3rem; }
+  .timelineCapture { max-width: 100%; }
+  .comparison { width: min(100%, 34rem); }
+  .finishCard {
+    align-items: start;
+    flex-direction: column;
+    background-image: linear-gradient(100deg, #301428fb 9%, #301428e8 72%, #301428ba), url('./courtyard-hero.webp');
+  }
 }
 @media (max-width: 480px) {
   .navigation { grid-template-columns: 1fr auto; min-height: 4.1rem; row-gap: .45rem; padding-block: .65rem .5rem; }
   .navLinks { grid-column: 1 / -1; grid-row: 2; gap: 1.15rem; font-size: .83rem; }
   .navigation .primary { min-height: 2.4rem; font-size: .83rem; padding-inline: .8rem; }
   .actions .primary, .actions .secondary { padding-inline: .86rem; font-size: .88rem; gap: .25rem; }
+  .roles > div { grid-template-columns: 1fr; gap: .38rem; }
   .footerInner { display: grid; grid-template-columns: 1fr auto; }
   .footerInner p { grid-row: 2; }
 }

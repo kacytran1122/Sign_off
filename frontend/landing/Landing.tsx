@@ -6,6 +6,12 @@ import tenantConfirmation from './assets/tenant-confirmation.webp';
 import { PhonePreview } from './PhonePreview';
 import styles from './landing.module.css';
 
+const steps = [
+  { title: 'Text a photo', description: 'Show what’s damaged and tell Signoff where you see it.' },
+  { title: 'Schedule the repair', description: 'The manager reviews the report and shares the visit window.' },
+  { title: 'Confirm it’s fixed', description: 'Reply to close the work order, or reopen it if the problem persists.' },
+];
+
 const roles = [
   { title: 'Tenants', description: 'Text a photo, follow the repair, and confirm when the problem is fixed.' },
   { title: 'Property managers', description: 'Get the original photo, the reported location, and a timeline you can share with your crew.' },
@@ -30,50 +36,32 @@ function HowItWorks() {
       <p>Send a photo by text. Your manager schedules a visit, then you confirm the fix.</p>
     </div>
     <ol className={styles.steps}>
-      <li className={styles.step}>
-        <div className={`${styles.stepVisual} ${styles.reportVisual}`}>
-          <div className={styles.photoCard}><div className={styles.messagePhoto} role="img" aria-label="Example ceiling stain" />
-            <p>Water stain by the window.</p></div>
-        </div>
-        <div className={styles.stepCopy}><h3>Text a photo</h3><p>Tell Signoff what’s damaged and where you see it.</p></div>
-      </li>
-      <li className={styles.step}>
-        <div className={`${styles.stepVisual} ${styles.planVisual}`}>
-          <div className={styles.visitCard}>
-            <span>Inspection scheduled</span>
-            <strong>Tuesday, 2–4 PM</strong>
-            <p>Unit 2B · Living room</p>
-          </div>
-        </div>
-        <div className={styles.stepCopy}><h3>Schedule the repair</h3><p>The manager reviews the photo and shares the visit window.</p></div>
-      </li>
-      <li className={styles.step}>
-        <div className={`${styles.stepVisual} ${styles.doneVisual}`}>
-          <div className={styles.completion}><SignoffLogo compact /><strong>Signed off</strong><p>Confirmed by the tenant</p></div>
-        </div>
-        <div className={styles.stepCopy}><h3>Confirm it’s fixed</h3><p>Reply when it’s resolved, or reopen the work order in the same thread.</p></div>
-      </li>
+      {steps.map(({ title, description }, index) => <li key={title} className={styles.step}>
+        <span className={styles.stepNumber} aria-hidden="true">{index + 1}</span>
+        <div><h3>{title}</h3><p>{description}</p></div>
+      </li>)}
     </ol>
   </section>;
 }
 
 function WorkspaceShowcase() {
-  return <section className={styles.workspaceShowcase} aria-labelledby="workspace-title">
-    <div className={styles.wrap}>
+  return <section className={`${styles.wrap} ${styles.workspaceShowcase}`} aria-labelledby="workspace-title">
+    <div className={styles.featureStage}>
       <div className={styles.workspaceIntro}>
         <h2 id="workspace-title">See the repair <em>in Signoff.</em></h2>
-        <p>The manager sees the tenant’s original photo, where to inspect, and when the crew is due. The timeline records when the tenant confirms the fix.</p>
+        <p>The manager sees the tenant’s photo, where to inspect, and when the crew is due. The timeline shows when the tenant confirms the fix.</p>
       </div>
       <div className={styles.captureGrid}>
         <figure className={styles.capture}>
           <Image src={scheduledWorkOrder} alt="Signoff work order showing a scheduled inspection, the reported room, and the tenant’s ceiling photo" unoptimized />
-          <figcaption>Scheduled work order · Signoff demo</figcaption>
+          <figcaption>Scheduled work order</figcaption>
         </figure>
         <figure className={`${styles.capture} ${styles.timelineCapture}`}>
           <Image src={tenantConfirmation} alt="Signoff timeline showing the report, scheduled inspection, repair, tenant confirmation, and closure" unoptimized />
-          <figcaption>Repair timeline · Signoff demo</figcaption>
+          <figcaption>Repair timeline</figcaption>
         </figure>
       </div>
+      <p className={styles.captureCredit}>Screens from the Signoff demo</p>
     </div>
   </section>;
 }
@@ -121,11 +109,11 @@ export default function Landing({ demo }: { demo: boolean }) {
       </section>
       <section className={`${styles.wrap} ${styles.who}`} id="who" aria-labelledby="who-title">
         <h2 id="who-title">Who it’s for</h2>
-        <div className={styles.roles}>
-          {roles.map(({ title, description }) => <article key={title}>
-            <h3>{title}</h3><p>{description}</p>
-          </article>)}
-        </div>
+        <dl className={styles.roles}>
+          {roles.map(({ title, description }) => <div key={title}>
+            <dt>{title}</dt><dd>{description}</dd>
+          </div>)}
+        </dl>
       </section>
       <section className={`${styles.wrap} ${styles.finish}`} aria-labelledby="finish-title">
         <div className={styles.finishCard}>
