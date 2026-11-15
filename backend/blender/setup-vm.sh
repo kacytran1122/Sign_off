@@ -60,7 +60,7 @@ WRAPPER
 chmod 755 /usr/local/bin/blender-headless
 GUEST
 
-COPYFILE_DISABLE=1 tar -cf - -C "$project_dir/backend/blender" create-scene.py script.py render.sh guide_scene.py render-stairs.py render-leak.py |
+COPYFILE_DISABLE=1 tar -cf - -C "$project_dir/backend/blender" create-scene.py script.py render.sh guide_scene.py render-stairs.py render-leak.py render-model.py |
   "$lima" shell --workdir / fix-this-spot -- sudo tar -xf - -C /opt/fix-this-spot-blender
 "$lima" shell --workdir / fix-this-spot -- sudo blender-headless \
   --python /opt/fix-this-spot-blender/create-scene.py -- /opt/fix-this-spot-blender/scene.blend

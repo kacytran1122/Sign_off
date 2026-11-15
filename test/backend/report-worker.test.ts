@@ -78,11 +78,15 @@ test('the report presents building and neighborhood evidence and serves the Blen
       city: 'LOS ANGELES', latitude: 34.1234567, longitude: -117.7654321, timeZone: 'America/Los_Angeles', store: 'TimescaleDB',
       weather: {
         current: { time: '2026-11-15T08:00', temperature_2m: 72, apparent_temperature: 74, relative_humidity_2m: 55 },
-        daily: { time: ['2026-11-16'], apparent_temperature_max: [78] },
+        daily: { time: ['2026-11-16', '2026-11-17'], apparent_temperature_max: [78, 81] },
       },
       coverage: { start_date: '2026-11-01', through_date: '2026-11-14', indicators: { water: 3, waste: 7 }, raw: 'untrusted' },
       heat: { typicalHighF: 81, validationMaeF: 2.1, trainedThrough: '2025-12-31' },
-      history: [{ time: '2026-11-15T16:00:00Z', feelsLikeF: 74 }, { time: '2026-11-15T17:00:00Z', feelsLikeF: 79 }],
+      history: [
+        { time: '2026-11-15T17:00:00Z', feelsLikeF: 79 },
+        { time: '2026-11-15T16:00:00Z', feelsLikeF: 74 },
+        { time: '2026-11-15T21:00:00Z', feelsLikeF: 73 },
+      ],
       coordinatesFromIntake: { latitude: 34.1234567 },
     },
     building: {
@@ -100,6 +104,12 @@ test('the report presents building and neighborhood evidence and serves the Blen
   for (const fragment of ['Water leak', 'Work order L-2', 'OpenStreetMap contributors', 'Forecast feels-like highs', '78°F', 'Seasonal model estimate 81°F', 'TimescaleDB', 'city 311 reports', 'whether mice or rats are present', 'Building record provided by CoStar', 'Conference room', 'Matched Matterport interior', 'Matched Vexcel aerial imagery', '&lt;script&gt;']) {
     assert(html.includes(fragment), fragment);
   }
+  assert.match(html, /aria-labelledby="observed-title observed-description"/);
+  assert.match(html, /aria-labelledby="forecast-title forecast-description"/);
+  // The duplicate or missing measurement must never be replaced by an invented value or line.
+  assert.match(html, /class="chart-line" d="M[\d.]+ [\d.]+ L[\d.]+ [\d.]+ M[\d.]+ [\d.]+"/);
+  assert.match(html, /<time datetime="2026-11-15T16:00:00\.000Z">[^<]+<\/time><\/th><td>74°F<\/td>/);
+  assert.match(html, /<time datetime="2026-11-17">[^<]+<\/time><\/th><td>81°F<\/td>/);
   assert(!html.includes('<script>'));
   assert(!html.includes('34.1234567'));
   assert(html.includes(`/api/reports/${id}/render`));
@@ -120,6 +130,40 @@ test('the report presents building and neighborhood evidence and serves the Blen
   assert.equal((await publish({ ...example, status: 'closed' })).status, 204);
   assert.equal((await request(`/api/reports/${id}/render`)).status, 404);
   assert.equal((await (await request(`/api/reports/${id}`)).json()).status, 'closed');
+});
+
+test('the report uses the repair scenario and reserves the roof inspection path for linked overhead damage', async () => {
+  const { request, publish } = await workerFixture();
+  const building = {
+    storiesAboveGrade: 1,
+    hasMatterport: true, hasVexcel: true,
+    inspectionSteps: ['Inspect the room below the roof feature.', { unexpected: true }, 'Review <linked> images.'],
+    roofEvidence: ['Roof material classification from the aerial capture.'],
+  };
+  const render = async (data: Record<string, unknown>) => {
+    assert.equal((await publish({ ...example, building, renderPng: png, ...data })).status, 204);
+    return (await request(`/reports/${id}`)).text();
+  };
+  const ceiling = await render({ scenario: 'ceiling-leak', aid: 'bucket' });
+  assert.match(ceiling, /<h1>Ceiling leak<\/h1>/);
+  assert.match(ceiling, /Suggested inspection path/);
+  assert.match(ceiling, /Review &lt;linked&gt; images/);
+  assert.doesNotMatch(ceiling, /unexpected|<svg viewBox=/);
+  assert.match(ceiling, /Data unavailable\./);
+
+  const sink = await render({ scenario: 'sink-leak', aid: 'bucket' });
+  assert.match(sink, /<h1>Under-sink leak<\/h1>/);
+  assert.match(sink, /Cabinet cutaway with the drain, trap and collection area/);
+  assert.doesNotMatch(sink, /Suggested inspection path|Inspect the room below the roof feature/);
+
+  const stair = await render({ issue: 'damage', scenario: 'damaged-stair', aid: 'stair-sign' });
+  assert.match(stair, /<h1>Damaged stair<\/h1>/);
+  assert.match(stair, /Avoid the damaged step/);
+  assert.doesNotMatch(stair, /Suggested inspection path|Demo|illustrative/i);
+
+  const blocked = await render({ scenario: 'sink-leak', aid: 'clear' });
+  assert.match(blocked, /Keep clear of the affected area/);
+  assert.doesNotMatch(blocked, /Cabinet cutaway/);
 });
 
 test('the publisher rejects oversized bodies before storing them, including lengthless streams', async () => {

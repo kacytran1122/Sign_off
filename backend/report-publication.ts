@@ -3,6 +3,8 @@ import type { Pool, PoolClient } from 'pg';
 import { z } from 'zod';
 import type { Config } from './config.js';
 import { guidance, repairEffects, type Aid, type Issue } from './repair.js';
+import { repairScenario } from './repair-scenario.js';
+import { planRoofInspection } from './inspection.js';
 
 const historySample = z.object({ time: z.string(), feelsLikeF: z.number() });
 const reportArea = z.object({
@@ -26,11 +28,13 @@ const reportArea = z.object({
 
 type ReportRow = {
   id: string; status: string; issue: Issue; aid: Aid; area: unknown; property_match: boolean;
-  landmarkId?: string; renderStatus?: string; image?: Buffer;
+  landmarkId?: string; description?: string; renderStatus?: string; image?: Buffer;
 };
 
 export function reportSnapshot(property: Config['property'], row: ReportRow) {
   const point = property.landmarks.find((landmark) => landmark.id === row.landmarkId);
+  const scenario = repairScenario(row.issue, row.aid, row.description);
+  const inspection = point && row.property_match && scenario === 'ceiling-leak' ? planRoofInspection(property, point, row.aid) : undefined;
   const area = reportArea.safeParse(row.area).data;
   if (area?.latitude !== undefined) area.latitude = Number(area.latitude.toFixed(3));
   if (area?.longitude !== undefined) area.longitude = Number(area.longitude.toFixed(3));
@@ -42,9 +46,11 @@ export function reportSnapshot(property: Config['property'], row: ReportRow) {
     hasVexcel: !!(property.roof.imageUrl || property.roof.imageFile),
     analysisDate: property.roof.analysisDate,
     captureDate: property.roof.captureDate,
+    roofEvidence: property.roof.attributes.slice(0, 6).map(({ label, value }) => `${label} · ${value}`),
+    inspectionSteps: inspection?.steps,
   } : undefined;
   return {
-    id: row.id, status: row.status, issue: row.issue, guidance: guidance[row.aid],
+    id: row.id, status: row.status, issue: row.issue, aid: row.aid, scenario, guidance: guidance[row.aid],
     effects: repairEffects(row.issue, row.aid), area, building, renderStatus: row.renderStatus,
   };
 }
@@ -52,7 +58,7 @@ export function reportSnapshot(property: Config['property'], row: ReportRow) {
 export function startReportPublisher(db: Pool, config: Config) {
   if (!config.reportPublish) return;
   const { origin, token } = config.reportPublish;
-  const evidenceVersion = createHash('sha256').update(JSON.stringify(config.property)).digest('hex');
+  const evidenceVersion = createHash('sha256').update('report-v3:').update(JSON.stringify(config.property)).digest('hex');
   let active: Promise<void> | undefined;
 
   async function publish() {
@@ -73,13 +79,13 @@ export function startReportPublisher(db: Pool, config: Config) {
   async function publishNext(client: PoolClient) {
     const { rows: [row] } = await client.query<ReportRow & { key: string; revision: string }>(`
       SELECT w.id,w.access_key AS key,w.status,r.issue,r.aid,r.area,r.property_match,
-        photo.landmark_id AS "landmarkId",b.status AS "renderStatus",b.image,
+        photo.landmark_id AS "landmarkId",photo.description,b.status AS "renderStatus",b.image,
         source.revision
       FROM work_orders w JOIN repair_contexts r ON w.id=r.order_id
       LEFT JOIN blender_renders b ON b.order_id=w.id AND b.aid IS NOT NULL
       LEFT JOIN report_publications p ON p.order_id=w.id
-      LEFT JOIN LATERAL (SELECT landmark_id FROM reports WHERE order_id=w.id ORDER BY id LIMIT 1) photo ON true
-      CROSS JOIN LATERAL (SELECT jsonb_build_array($2::text,w.status,r.updated_at,b.status,b.attempts)::text AS revision) source
+      LEFT JOIN LATERAL (SELECT landmark_id,description FROM reports WHERE order_id=w.id ORDER BY id LIMIT 1) photo ON true
+      CROSS JOIN LATERAL (SELECT jsonb_build_array($2::text,w.status,r.updated_at,b.status,b.completed_at,b.attempts,r.issue,r.aid,md5(photo.description))::text AS revision) source
       WHERE w.property_id=$1 AND p.revision IS DISTINCT FROM source.revision
         AND (p.retry_after IS NULL OR p.retry_after<=now())
       ORDER BY w.created_at DESC LIMIT 1`, [config.property.id, evidenceVersion]);

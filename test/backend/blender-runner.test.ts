@@ -30,6 +30,9 @@ done
     encoding: 'buffer',
   });
   const cases = [
+    { args: ['inspection', 'bucket', 'sink-leak'], expected: ['--python', 'render-model.py', '--', 'output', 'sink-leak', 'bucket'] },
+    { args: ['inspection', 'bucket', 'ceiling-leak'], expected: ['--python', 'render-model.py', '--', 'output', 'ceiling-leak', 'bucket'] },
+    { args: ['inspection', 'clear', 'damaged-window'], expected: ['--python', 'render-model.py', '--', 'output', 'damaged-window', 'clear'] },
     { args: ['inspection', 'bucket'], expected: ['--python', 'render-leak.py', '--', 'output', 'bucket'] },
     { args: ['inspection', 'towel'], expected: ['--python', 'render-leak.py', '--', 'output', 'towel'] },
     { args: ['inspection', 'stair-sign'], expected: ['--python', 'render-stairs.py', '--', 'output'] },
@@ -43,4 +46,5 @@ done
       arg.endsWith('/inspection.png') ? 'output' : arg), expected);
   }
   await assert.rejects(run(['inspection', 'unknown']), { code: 2 });
+  await assert.rejects(run(['inspection', 'bucket', 'unknown']), { code: 2 });
 });

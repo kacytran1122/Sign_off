@@ -4,6 +4,57 @@ const reportPath = new RegExp(`^/(reports|api/reports)/(${UUID})(/render)?/?$`, 
 const MAX_PNG_BYTES = 4 * 1024 * 1024;
 const MAX_BODY_BYTES = 4 * Math.ceil(MAX_PNG_BYTES / 3) + 32 * 1024;
 const states = { open: 'Open', scheduled: 'Scheduled', awaiting_confirmation: 'Awaiting tenant confirmation', closed: 'Closed' };
+const precautions = {
+  bucket: {
+    title: 'Water leak',
+    action: 'Contain a small drip safely',
+    model: 'Bucket below a drip with a clear walkway',
+  },
+  towel: {
+    title: 'Water on the floor',
+    action: 'Protect the walking area',
+    model: 'Towel at a small spill with a clear walkway',
+  },
+  clear: {
+    action: 'Keep clear of the affected area',
+    model: 'Clear space around a damaged area',
+  },
+  'stair-sign': {
+    title: 'Damaged stair',
+    action: 'Avoid the damaged step',
+    model: 'Unsafe step and a warning visible from the landing',
+  },
+};
+const scenarios = {
+  'ceiling-leak': {
+    issue: 'leak',
+    title: 'Ceiling leak',
+    inspection: 'Have maintenance inspect the reported ceiling and adjacent services.',
+  },
+  'sink-leak': {
+    issue: 'leak',
+    title: 'Under-sink leak',
+    model: 'Cabinet cutaway with the drain, trap and collection area',
+    inspection: 'Have maintenance inspect the sink supply connections, drain joints and cabinet base.',
+  },
+  'floor-spill': {
+    issue: 'leak',
+    title: 'Water on the floor',
+    inspection: 'Identify the source of the water and check the floor before reopening the affected walkway.',
+  },
+  'damaged-stair': {
+    issue: 'damage',
+    title: 'Damaged stair',
+    inspection: 'Keep the affected stair out of use until maintenance has inspected the tread and its supports.',
+  },
+  'damaged-window': {
+    issue: 'damage',
+    title: 'Damaged window',
+    inspection: 'Have maintenance inspect the affected glass, frame and latch from a safe position.',
+  },
+  'general-leak': { issue: 'leak', title: 'Water leak' },
+  'general-damage': { issue: 'damage', title: 'Building damage' },
+};
 const privateHeaders = {
   'Cache-Control': 'private, no-store',
   'X-Robots-Tag': 'noindex, nofollow',
@@ -22,6 +73,9 @@ const boundedNumber = (value, min, max) => typeof value === 'number' && Number.i
 const dateOnly = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
   Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value ? value : undefined;
 const record = (value) => value && typeof value === 'object' && !Array.isArray(value);
+const sourceLines = (values) => Array.isArray(values)
+  ? values.slice(0, 8).map((value) => shortText(value, 320)).filter(Boolean)
+  : undefined;
 
 async function authorized(request, secret) {
   if (typeof secret !== 'string' || secret.length < 24) return false;
@@ -147,6 +201,8 @@ function cleanBuilding(input) {
     hasVexcel: input.hasVexcel === true,
     analysisDate: dateOnly(input.analysisDate),
     captureDate: dateOnly(input.captureDate),
+    inspectionSteps: sourceLines(input.inspectionSteps),
+    roofEvidence: sourceLines(input.roofEvidence),
   };
 }
 
@@ -165,12 +221,15 @@ function readPng(base64) {
 
 function snapshot(input) {
   if (!record(input) || typeof input.id !== 'string' || !/^[1-9]\d{0,18}$/.test(input.id) ||
-    !Object.hasOwn(states, input.status) || !['leak', 'damage'].includes(input.issue)) return;
+    typeof input.status !== 'string' || !Object.hasOwn(states, input.status) || !['leak', 'damage'].includes(input.issue)) return;
   const guidance = shortText(input.guidance, 1800);
   const effects = shortText(input.effects, 1800);
   if (!guidance || !effects || (input.renderPng != null && !readPng(input.renderPng))) return;
   return {
     id: input.id, status: input.status, issue: input.issue, guidance, effects,
+    aid: typeof input.aid === 'string' && Object.hasOwn(precautions, input.aid) ? input.aid : undefined,
+    scenario: typeof input.scenario === 'string' && Object.hasOwn(scenarios, input.scenario) &&
+      scenarios[input.scenario].issue === input.issue ? input.scenario : undefined,
     area: cleanArea(input.area), building: cleanBuilding(input.building),
     renderStatus: input.renderPng ? 'ready' : input.renderStatus === 'queued' ? 'queued' : input.renderStatus === 'failed' ? 'failed' : undefined,
     renderPng: input.renderPng ?? undefined,
@@ -181,31 +240,84 @@ const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&':
 const rounded = (value, digits = 0) => value.toLocaleString('en-US', { maximumFractionDigits: digits });
 const temperature = (value) => value === undefined ? '' : `${Math.round(value)}°F`;
 
+const hour = 60 * 60 * 1000;
+const day = 24 * hour;
+
+function series(raw) {
+  const byTime = new Map();
+  for (const [time, degrees] of raw) {
+    if (Number.isFinite(time) && Number.isFinite(degrees)) byTime.set(time, degrees);
+  }
+  return [...byTime].sort(([left], [right]) => left - right);
+}
+
+function localTimeFormat(timeZone) {
+  const options = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' };
+  try { return new Intl.DateTimeFormat('en-US', { ...options, timeZone: timeZone ?? 'UTC' }); }
+  catch { return new Intl.DateTimeFormat('en-US', { ...options, timeZone: 'UTC' }); }
+}
+
+const forecastTimeFormat = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+
+function lineChart(id, title, style, points, formatter, maximumGap) {
+  if (!points.length) return `<figure class="chart"><figcaption>${title}</figcaption><p class="muted">Data unavailable.</p></figure>`;
+  const [start] = points[0];
+  const [end] = points.at(-1);
+  const values = points.map((entry) => entry[1]);
+  const low = Math.min(...values);
+  const high = Math.max(...values);
+  const step = Math.max(1, Math.ceil((high - low) / 4));
+  const base = Math.floor((low - step / 2) / step) * step;
+  const limit = Math.ceil((high + step / 2) / step) * step;
+  const ticks = Array.from({ length: (limit - base) / step + 1 }, (_, i) => base + i * step);
+  const plot = { left: 52, right: 592, top: 28, bottom: 174 };
+  const x = (time) => end === start ? (plot.left + plot.right) / 2
+    : plot.left + (time - start) / (end - start) * (plot.right - plot.left);
+  const y = (value) => plot.bottom - (value - base) / (limit - base) * (plot.bottom - plot.top);
+  const commands = points.map(([time, degrees], i) => {
+    const mark = !i || time - points[i - 1][0] > maximumGap ? 'M' : 'L';
+    return `${mark}${x(time).toFixed(2)} ${y(degrees).toFixed(2)}`;
+  }).join(' ');
+  const horizontal = ticks.map((value) => `<line x1="${plot.left}" x2="${plot.right}" y1="${y(value)}" y2="${y(value)}"/><text x="${plot.left - 10}" y="${y(value)}" text-anchor="end" dominant-baseline="middle">${value}</text>`).join('');
+  const rangeLabels = start === end ? [[start, 'middle']] : [[start, 'start'], [end, 'end']];
+  const bottom = rangeLabels.map(([time, anchor]) => `<text x="${x(time)}" text-anchor="${anchor}" y="198">${esc(formatter.format(time))}</text>`).join('');
+  const readingRows = points.map(([time, value]) => {
+    const instant = new Date(time).toISOString();
+    return `<tr><th scope="row"><time datetime="${id === 'forecast' ? instant.slice(0, 10) : instant}">${esc(formatter.format(time))}</time></th><td>${rounded(value, 1)}°F</td></tr>`;
+  }).join('');
+  const description = `${points.length === 1 ? `One value at ${temperature(low)}` : `${points.length} values from ${temperature(low)} to ${temperature(high)}`}. Use the reading table for exact values and dates.`;
+  return `<figure class="chart ${style}"><figcaption id="${id}-title">${title}</figcaption>
+    <svg viewBox="0 0 610 212" role="img" aria-labelledby="${id}-title ${id}-description">
+      <desc id="${id}-description">${description}</desc>
+      <g class="chart-ticks" aria-hidden="true"><text x="${plot.left}" y="15">Feels like (°F)</text>${horizontal}${bottom}</g>
+      <path class="chart-line" d="${commands}"/>
+      ${points.map(([time, degrees]) => `<circle class="chart-dot" cx="${x(time)}" cy="${y(degrees)}" r="${points.length > 12 ? 3 : 4}"><title>${esc(formatter.format(time))} · ${rounded(degrees, 1)}°F</title></circle>`).join('')}
+    </svg>
+    <details><summary>View values</summary><table><thead><tr><th scope="col">${id === 'forecast' ? 'Date' : 'Reading time'}</th><th scope="col">Feels like</th></tr></thead><tbody>${readingRows}</tbody></table></details>
+  </figure>`;
+}
+
 function heatContent(area) {
   const weather = area?.weather;
   const current = weather?.current;
   const currentValues = current ? [
-    current.temperature_2m !== undefined && `${temperature(current.temperature_2m)} outside`,
-    current.apparent_temperature !== undefined && `${temperature(current.apparent_temperature)} feels like`,
-    current.relative_humidity_2m !== undefined && `${Math.round(current.relative_humidity_2m)}% relative humidity`,
-  ].filter(Boolean) : [];
-  const forecast = weather?.daily.time.map((day, index) => {
-    const max = weather.daily.apparent_temperature_max[index];
-    const bar = Math.max(8, Math.min(100, (max + 30) / 1.6));
-    return `<li><time datetime="${esc(day)}">${esc(day.slice(5))}</time><i aria-hidden="true" style="--level:${bar}%"></i><strong>${temperature(max)}</strong></li>`;
-  }).join('');
-  const history = area?.history ?? [];
-  const temperatures = history.map(({ feelsLikeF }) => feelsLikeF);
-  const low = Math.min(...temperatures);
-  const high = Math.max(...temperatures);
-  const spark = history.map(({ time, feelsLikeF }) =>
-    `<i aria-hidden="true" title="${esc(time)} · ${temperature(feelsLikeF)}" style="--level:${15 + 85 * (feelsLikeF - low) / Math.max(1, high - low)}%"></i>`).join('');
-  return `<section class="card"><h3>Outdoor heat and humidity</h3>
-    ${currentValues.length ? `<p class="measure">${currentValues.join(' · ')}</p>${current.time ? `<p class="small">Observed ${esc(current.time.replace('T', ' '))} local time.</p>` : ''}` : '<p>Current outdoor conditions are unavailable.</p>'}
-    ${forecast ? `<p class="label">Forecast feels-like highs</p><ul class="bars">${forecast}</ul>` : ''}
-    ${history.length ? `<p class="label">Recent outdoor readings</p><div class="spark" role="img" aria-label="Feels-like temperatures from ${temperature(low)} to ${temperature(high)}">${spark}</div><p class="small">${temperature(low)} to ${temperature(high)}${area.store ? ` · Stored in ${esc(area.store)}` : ''}</p>` : ''}
-    ${area?.heat ? `<p class="small">Seasonal model estimate ${temperature(area.heat.typicalHighF)} feels like · Average validation error ${rounded(area.heat.validationMaeF, 1)}°F${area.heat.trainedThrough ? ` · Trained through ${esc(area.heat.trainedThrough)}` : ''}.</p>` : ''}
-    <p class="small">Indoor conditions require an on-site check.${weather ? ' <a href="https://open-meteo.com/" rel="noreferrer">Weather by Open-Meteo</a>.' : ''}</p>
+    ['Outdoor temperature', temperature(current.temperature_2m)],
+    ['Feels like', temperature(current.apparent_temperature)],
+    ['Relative humidity', current.relative_humidity_2m !== undefined ? `${Math.round(current.relative_humidity_2m)}%` : ''],
+  ].filter(([, value]) => value) : [];
+  const forecast = series((weather?.daily?.time ?? []).map((date, index) => [Date.parse(date), weather.daily.apparent_temperature_max[index]]));
+  const history = series((area?.history ?? []).map(({ time, feelsLikeF }) => [Date.parse(time), feelsLikeF]));
+  const formatter = localTimeFormat(area?.timeZone);
+  const zone = formatter.resolvedOptions().timeZone;
+  return `<section class="card weather-card" aria-labelledby="weather-heading">
+    <h3 id="weather-heading">Outdoor heat and humidity</h3>
+    ${currentValues.length ? `<dl class="weather-current">${currentValues.map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join('')}</dl>${current.time ? `<p class="muted">Observed ${esc(current.time.replace('T', ' '))} local time.</p>` : ''}` : '<p class="muted">Current outdoor conditions are unavailable.</p>'}
+    <div class="chart-grid">
+      ${lineChart('observed', 'Recent outdoor readings', 'observed', history, formatter, 1.5 * hour)}
+      ${lineChart('forecast', 'Forecast feels-like highs', 'forecast', forecast, forecastTimeFormat, 1.5 * day)}
+    </div>
+    ${area?.heat ? `<div class="estimate"><p><strong>Seasonal model estimate ${temperature(area.heat.typicalHighF)}</strong> feels like</p><p class="muted">Average validation error ${rounded(area.heat.validationMaeF, 1)}°F${area.heat.trainedThrough ? ` · Trained through ${esc(area.heat.trainedThrough)}` : ''}.</p></div>` : ''}
+    <p class="muted attribution">Indoor conditions require an on-site check.${history.length ? ` Recent readings shown in ${esc(zone)}${area.store ? ` and stored in ${esc(area.store)}` : ''}.` : ''}${weather ? ' <a href="https://open-meteo.com/" rel="noreferrer">Weather by Open-Meteo</a>.' : ''}</p>
   </section>`;
 }
 
@@ -218,77 +330,135 @@ function neighborhood(area) {
   const coverage = area?.coverage;
   const source = { 'LOS ANGELES': 'https://data.lacity.org/d/2cy6-i7zn', HOUSTON: 'https://my311.houstontx.gov/servicerequestdata.html' }[area?.city?.toUpperCase()];
   const records = source ? `<a href="${source}" rel="noreferrer">city 311 reports</a>` : 'city 311 reports';
-  return `<section class="group" aria-labelledby="neighborhood">
-    <h2 id="neighborhood">Neighborhood conditions</h2>
-    ${area?.city ? `<p class="small">${esc(area.city)}</p>` : ''}
-    <div class="grid">
-      ${heatContent(area)}
-      <section class="card"><h3>Rodents and nearby 311 reports</h3>
-        ${coverage ? `<p><strong>${rounded(coverage.indicators.water)}</strong> water-related and <strong>${rounded(coverage.indicators.waste)}</strong> waste-related ${records} within 1 km from ${esc(coverage.start_date)} to ${esc(coverage.through_date)}.</p>` : '<p>Nearby water and waste report counts are unavailable.</p>'}
-        ${coverage?.indicators.rodentMentions !== undefined ? `<p><strong>${rounded(coverage.indicators.rodentMentions)}</strong> Houston 311 reports in the same area and dates mentioned mice or rats.</p>` : ''}
-        <p>Water and waste reports describe neighborhood conditions. An on-site check can establish whether mice or rats are present. Tell maintenance if you see rodents, droppings, or gnaw marks.</p>
-        ${bbox ? `<iframe title="OpenStreetMap neighborhood map" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin" src="https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(bbox)}&amp;layer=mapnik"></iframe><p class="small"><a href="https://www.openstreetmap.org/copyright" rel="noreferrer">© OpenStreetMap contributors</a> · Approximate neighborhood</p>` : '<p class="small">Neighborhood map unavailable.</p>'}
+  return `<section class="section" aria-labelledby="neighborhood">
+    <div class="section-title"><h2 id="neighborhood">Neighborhood conditions</h2>${area?.city ? `<p class="muted">${esc(area.city)}</p>` : ''}</div>
+    ${heatContent(area)}
+    <div class="context-grid">
+      <section class="card"><h3>Nearby 311 reports</h3>
+        ${coverage ? `<dl class="local-counts">
+          <div><dt>Water-related</dt><dd>${rounded(coverage.indicators.water)}</dd></div>
+          <div><dt>Waste-related</dt><dd>${rounded(coverage.indicators.waste)}</dd></div>
+          ${coverage.indicators.rodentMentions !== undefined ? `<div><dt>Rodent mentions</dt><dd>${rounded(coverage.indicators.rodentMentions)}</dd></div>` : ''}
+        </dl><p class="muted">Source: ${records} within 1 km from ${esc(coverage.start_date)} to ${esc(coverage.through_date)}.</p>` : '<p class="muted">Nearby 311 report counts are unavailable.</p>'}
+        ${coverage?.indicators.rodentMentions !== undefined ? '<p class="muted">Rodent mentions are Houston 311 requests in the same area and dates that mention mice or rats.</p>' : ''}
+        <p class="muted">An on-site check can establish whether mice or rats are present. Tell maintenance if you see rodents, droppings, or gnaw marks.</p>
+      </section>
+      <section class="card"><h3>Approximate neighborhood</h3>
+        ${bbox ? `<iframe title="OpenStreetMap neighborhood map" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin" src="https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(bbox)}&amp;layer=mapnik"></iframe><p class="muted attribution"><a href="https://www.openstreetmap.org/copyright" rel="noreferrer">© OpenStreetMap contributors</a></p>` : '<p class="muted">Neighborhood map unavailable.</p>'}
       </section>
     </div>
   </section>`;
 }
 
-function buildingContent(building) {
-  const room = building?.roomEvidence;
-  const facts = building ? [
-    ['Building type', [building.buildingType, building.propertySubtype].filter(Boolean).join(' · ')],
-    ['Above-grade stories', building.storiesAboveGrade],
-    ['Building area', building.buildingAreaSqFt && `${rounded(building.buildingAreaSqFt)} sq ft`],
-    ['Year built', building.yearBuilt],
-    ['Matched scan views', building.matchedViewpoints],
-    ['Matched scan rooms', building.matchedRooms],
-    ['Reported room', building.roomLabel],
-    ['Estimated room area', room?.areaSqFt && `${rounded(room.areaSqFt, 1)} sq ft`],
-    ['Estimated dimensions', room && [room.widthFt && `${rounded(room.widthFt, 1)} ft wide`, room.depthFt && `${rounded(room.depthFt, 1)} ft deep`, room.heightFt && `${rounded(room.heightFt, 1)} ft high`].filter(Boolean).join(' · ')],
-    ['Roof capture', building.captureDate],
-    ['Roof analysis', building.analysisDate],
-  ].filter(([, value]) => value) : [];
-  return `<section class="card" aria-labelledby="building"><h2 id="building">Building evidence</h2>
-    ${facts.length ? `<dl>${facts.map(([label, value]) => `<div><dt>${label}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>` : '<p>Verified building details are unavailable for this report.</p>'}
-    ${building?.hasMatterport || building?.hasVexcel ? `<p class="small">${[building.hasMatterport && 'Matched Matterport interior', building.hasVexcel && 'Matched Vexcel aerial imagery'].filter(Boolean).join(' · ')}</p>` : ''}
-    ${building?.storiesAboveGrade ? '<p class="small">Building record provided by CoStar.</p>' : ''}
+function sourceCard(title, facts, notes) {
+  const present = facts.filter(([, value]) => value);
+  return `<section class="card evidence-card"><h3>${title}</h3>
+    ${present.length ? `<dl class="evidence-list">${present.map(([label, value]) => `<div><dt>${label}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>` : ''}
+    ${notes}
+  </section>`;
+}
+
+function buildingContent(building, report) {
+  if (!building || !(building.storiesAboveGrade || building.hasMatterport || building.hasVexcel)) {
+    return '<section class="section" aria-labelledby="building"><div class="section-title"><h2 id="building">Building evidence</h2></div><div class="card muted">Verified building evidence is unavailable for this report.</div></section>';
+  }
+  const room = building.roomEvidence;
+  const linkedOverhead = building.storiesAboveGrade && building.hasMatterport && building.hasVexcel &&
+    (report.scenario === 'ceiling-leak' || (!report.scenario && report.issue === 'leak' && (building.inspectionSteps?.length ?? 0) > 0));
+  return `<section class="section" aria-labelledby="building">
+    <div class="section-title"><h2 id="building">Building evidence</h2>${building.roomLabel ? `<p class="muted">${esc(building.roomLabel)}</p>` : ''}</div>
+    <div class="source-grid">
+      ${building.storiesAboveGrade ? sourceCard('CoStar Group', [
+        ['Building type', [building.buildingType, building.propertySubtype].filter(Boolean).join(' · ')],
+        ['Above-grade stories', building.storiesAboveGrade],
+        ['Building area', building.buildingAreaSqFt && `${rounded(building.buildingAreaSqFt)} sq ft`],
+        ['Year built', building.yearBuilt],
+      ], '<p class="muted attribution">Building record provided by CoStar.</p>') : ''}
+      ${building.hasMatterport ? sourceCard('Matterport', [
+        ['Reported room', building.roomLabel],
+        ['Estimated room area', room?.areaSqFt && `${rounded(room.areaSqFt, 1)} sq ft`],
+        ['Estimated dimensions', room && [room.widthFt && `${rounded(room.widthFt, 1)} ft wide`, room.depthFt && `${rounded(room.depthFt, 1)} ft deep`, room.heightFt && `${rounded(room.heightFt, 1)} ft high`].filter(Boolean).join(' · ')],
+        ['Matched scan rooms', building.matchedRooms],
+        ['Matched scan views', building.matchedViewpoints],
+      ], '<p class="muted attribution">Matched Matterport interior</p>') : ''}
+      ${building.hasVexcel ? sourceCard('Vexcel', [
+        ['Roof capture', building.captureDate],
+        ['Roof analysis', building.analysisDate],
+      ], `${building.roofEvidence?.length ? `<ul class="evidence-notes">${building.roofEvidence.map((line) => `<li>${esc(line)}</li>`).join('')}</ul>` : ''}<p class="muted attribution">Matched Vexcel aerial imagery</p>`) : ''}
+    </div>
+    ${linkedOverhead && building.inspectionSteps?.length ? `<section class="card path-card"><h3>Suggested inspection path</h3><ol>${building.inspectionSteps.map((step) => `<li>${esc(step)}</li>`).join('')}</ol><p class="muted">The property record, interior scan, and aerial capture guide where to look. A site visit can verify the source.</p></section>` : ''}
   </section>`;
 }
 
 const styles = `
-*{box-sizing:border-box}body{margin:0;background:#fffcf8;color:#261b24;font:16px/1.6 system-ui,sans-serif}
-header{background:#fffaf7e8;border-bottom:1px solid #e9dde3}.shell{max-width:72rem;width:calc(100% - 2.4rem);margin:auto}
-nav{display:flex;align-items:center;justify-content:space-between;padding:.8rem 0;color:#5d264a}.mark{font:italic 2rem/1 Georgia,serif;font-weight:700}
-.hero{margin:0 0 1.5rem;padding:clamp(2rem,6vw,4.8rem) 0;background:linear-gradient(112deg,#f7e6c5,#f4e3ed 85%)}
-.hero p,.label{font-size:.82rem;font-weight:650;letter-spacing:.03em;color:#652f50}h1,h2,h3,p{margin:0}
-h1,h2{font-family:Georgia,serif;font-weight:400;line-height:1.15;letter-spacing:-.025em}h1{font-size:clamp(2.6rem,7vw,5rem)}
-h2{font-size:clamp(1.5rem,4vw,2.3rem);margin-bottom:.6rem}h3{font-size:1.1rem}
-.badge{display:inline-block;margin:.65rem 0 0;padding:.24rem .75rem;border:1px solid #793b6260;border-radius:2rem;color:#502341;background:#fff9fb;font-size:.86rem}
-main>.grid,.group{margin-bottom:1.4rem}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.85rem}
-.card,.group{border:1px solid #e9dde3;border-radius:1.2rem;background:#fffcfa;padding:clamp(.9rem,3vw,1.75rem);min-width:0}
-.group{background:#f9eff4}.card>p:not(:first-child),.group>p,.group>.grid{margin-top:.55rem}
-.small{color:#66545f;font-size:.84rem}.measure{font-weight:600}.label{margin:.75rem 0 .3rem}
-a{color:#632d51;text-underline-offset:.16em}.guide{display:block;width:100%;height:auto;margin-top:.85rem;border-radius:.75rem;border:1px solid #e9dde3}
-iframe{width:100%;height:13rem;border:0;border-radius:.65rem;background:#f4edef;margin-top:.85rem}
-.bars{list-style:none;margin:.45rem 0;padding:0}.bars li{display:grid;grid-template-columns:3.3rem minmax(0,1fr) 3.4rem;gap:.45rem;align-items:center;font-size:.8rem}
-.bars i,.spark i{display:block;background:#b46a95;border-radius:.25rem}.bars i{height:.42rem;width:var(--level)}.bars strong{text-align:right}
-.spark{display:flex;gap:2px;align-items:end;height:3rem;padding:.2rem;background:#f6ebf2;border-radius:.45rem}.spark i{height:var(--level);flex:1}
-dl{margin:0}dl>div{display:flex;justify-content:space-between;gap:.7rem;padding:.34rem 0;border-bottom:1px solid #ece4e8}dt{font-size:.86rem;color:#66545f}dd{margin:0;text-align:right}
-footer{padding:1.25rem 0 2rem;color:#66545f;font-size:.83rem}
-@media(max-width:670px){.grid{grid-template-columns:1fr}.shell{width:calc(100% - 1.25rem)}dl>div{flex-wrap:wrap}dd{text-align:left}}
+*{box-sizing:border-box}
+body{margin:0;background:#faf6f3;color:#291d27;font:16px/1.55 system-ui,-apple-system,sans-serif}
+h1,h2,h3,p,figure,dl{margin:0}
+h1,h2{font-family:Georgia,serif;font-weight:400;letter-spacing:-.04em;line-height:1.1}
+h1{font-size:clamp(2.8rem,8vw,5.25rem)}h2{font-size:clamp(1.9rem,4.5vw,2.85rem)}
+h3{font-size:1.16rem;line-height:1.32;letter-spacing:-.02em}p{overflow-wrap:anywhere}
+a{color:#66294e;text-underline-offset:.2em}a:focus-visible,summary:focus-visible{outline:2px solid #7d3d65;outline-offset:4px}
+.shell{max-width:73rem;width:calc(100% - 3rem);margin-inline:auto}
+header{background:#fffcfa;border-bottom:1px solid #ebdde4}nav{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.7rem 0}
+.mark{font:700 italic 2.05rem/1 Georgia,serif;letter-spacing:-.07em;color:#652d50}
+.refresh{padding:.41rem .82rem;border:1px solid #ddc8d6;border-radius:999px;text-decoration:none;font-size:.8rem;font-weight:650}
+.hero{padding:clamp(2.4rem,5.6vw,4.8rem) 0;background:radial-gradient(ellipse 45rem 27rem at 92% 70%,#efe1ed,transparent),linear-gradient(110deg,#f2e1ce,#fff9ee 65%)}
+.hero p{color:#632f4f;font-size:.85rem;font-weight:650;letter-spacing:.04em}.hero h1{margin:.32rem 0 .75rem}
+.badge{display:inline-block;border:1px solid #d9c2d0;border-radius:999px;padding:.22rem .67rem;background:#fffaf5;color:#61314d;font-size:.82rem;font-weight:650}
+.badge.closed{color:#245848;background:#edf4e9;border-color:#c9dccb}
+main{padding-block:clamp(1.45rem,4vw,3rem)}
+.section{margin-top:clamp(2rem,5.5vw,4rem)}.section-title{margin:0 0 1rem}.section-title .muted{margin-top:.28rem}
+.card{min-width:0;border:1px solid #e9dce3;border-radius:1.1rem;background:#fffcfa;padding:clamp(1rem,2.7vw,1.75rem);box-shadow:0 3px 11px #41223508}
+.card>p:not(:first-child){margin-top:.56rem}.muted{color:#614e5d;font-size:.87rem}
+.attribution{border-top:1px solid #ede1e8;padding-top:.65rem;margin-top:1rem}
+.action-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:.9rem;align-items:stretch}
+.action-card{background:linear-gradient(150deg,#f7e8e9,#fffdf9 65%);padding:clamp(1.2rem,3vw,2.3rem)}
+.action-card h2{font-size:clamp(1.85rem,4vw,2.7rem)}.action-card > p{max-width:43ch}
+.action-pair{border-top:1px solid #e8d9e1;margin-top:1.2rem;padding-top:1rem}.action-pair h3{font-size:.95rem}.action-pair p{margin:.3rem 0 1rem}
+.model-card{overflow:hidden;padding:clamp(.75rem,1.5vw,1rem)}.model-card img{display:block;width:100%;height:auto;aspect-ratio:1.56;object-fit:contain;background:#f4edf0;border-radius:.64rem}
+.model-card figcaption{padding:.72rem .45rem .12rem}.model-card figcaption strong{display:block;font-size:1rem}
+.model-card figcaption p{margin-top:.25rem}.model-pending{min-height:8rem;padding:.75rem}
+.source-grid,.context-grid,.chart-grid{display:grid;gap:.9rem;grid-template-columns:repeat(2,minmax(0,1fr))}
+.source-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr));align-items:stretch}
+.evidence-card h3{color:#65324e}.path-card{margin-top:.9rem}.path-card ol,.evidence-notes{padding-left:1.25rem;margin:.75rem 0}
+.evidence-list{margin-top:.45rem}.evidence-list>div{display:flex;justify-content:space-between;gap:.7rem;padding:.36rem 0;border-bottom:1px solid #efe5eb}.evidence-list dt{color:#614e5d;font-size:.83rem}.evidence-list dd{text-align:right;font-size:.89rem;font-weight:600}
+.weather-card{margin-bottom:.9rem}.weather-current,.local-counts{display:flex;flex-wrap:wrap;gap:.65rem;margin:.65rem 0}.weather-current>div,.local-counts>div{min-width:0;flex:1 1 7rem;padding:.58rem .66rem;background:#f5edf2;border-radius:.58rem}
+.weather-current dt,.local-counts dt{font-size:.79rem;color:#614e5d}.weather-current dd,.local-counts dd{font-weight:700;font-size:clamp(1.1rem,3vw,1.5rem);font-variant-numeric:tabular-nums}
+.chart{min-width:0;margin:.75rem 0 .2rem;padding:.8rem;border:1px solid #ebdfe7;border-radius:.85rem}
+.chart figcaption{font-size:.92rem;font-weight:650}.chart>p{margin-top:.4rem}.chart svg{width:100%;height:auto;display:block;margin-top:.55rem;overflow:visible}
+.chart-ticks line{stroke:#e7dce4;stroke-width:1}.chart-ticks text{fill:#5b4a57;font:16px system-ui,-apple-system,sans-serif}
+.chart-line{fill:none;stroke:#8b3566;stroke-width:3;stroke-linejoin:round;stroke-linecap:round}.chart-dot{fill:#8b3566;stroke:#fff;stroke-width:1.5}
+.forecast .chart-line{stroke:#276760;stroke-dasharray:7 5}.forecast .chart-dot{fill:#276760}
+.chart details{font-size:.83rem;margin-top:.36rem}.chart summary{cursor:pointer;color:#632c50;padding:.18rem 0}
+.chart table{width:100%;border-collapse:collapse;margin-top:.4rem;text-align:left}.chart td,.chart th{padding:.2rem .3rem;border-bottom:1px solid #eee3eb}.chart td:last-child,.chart th:last-child{text-align:right}.chart tbody th{font-weight:400}
+.estimate{background:#f4edf1;border-radius:.58rem;margin-top:.8rem;padding:.66rem .8rem}.estimate strong{font-weight:650}
+iframe{display:block;width:100%;height:13rem;border:0;border-radius:.65rem;background:#f4edef;margin-top:.72rem}
+footer{padding:0 0 2rem;color:#614e5d;font-size:.83rem}
+@media(max-width:730px){.action-grid,.context-grid,.chart-grid{grid-template-columns:minmax(0,1fr)}.shell{width:calc(100% - 1.3rem)}.chart-ticks text{font-size:23px}}
 `;
 
 function reportHtml(report, uuid) {
-  const title = report.issue === 'leak' ? 'Water leak' : 'Building damage';
+  const scenario = Object.hasOwn(scenarios, report.scenario) ? scenarios[report.scenario] : undefined;
+  const precaution = Object.hasOwn(precautions, report.aid) ? precautions[report.aid] : undefined;
+  const title = scenario?.title ?? precaution?.title ?? (report.issue === 'leak' ? 'Water leak' : 'Building damage');
+  const action = precaution?.action ?? 'Temporary protection';
+  const model = (report.aid !== 'clear' && scenario?.model) || precaution?.model || 'Temporary protection for the reported condition';
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="robots" content="noindex,nofollow"><title>${title} · Signoff</title><style>${styles}</style></head><body>
-    <header><nav class="shell" aria-label="Signoff"><span class="mark">Signoff</span><a href="/reports/${uuid}">Refresh report</a></nav></header>
-    <section class="hero"><div class="shell"><p>Work order L-${esc(report.id)}</p><h1>${title}</h1><span class="badge">${states[report.status]}</span></div></section>
-    <main class="shell"><div class="grid"><section class="card"><h2>Temporary protection</h2><p>${esc(report.guidance)}</p>
-    ${report.renderStatus === 'ready' ? `<img class="guide" src="/api/reports/${uuid}/render" alt="Three-dimensional scene showing the temporary protection for this repair">` :
-      `<p class="small">${report.renderStatus === 'queued' ? 'The 3D guide is being prepared. Refresh this page for an update.' : 'A 3D guide is unavailable.'}</p>`}
-    <p class="small"><strong>Possible effects</strong> ${esc(report.effects)}</p></section>${buildingContent(report.building)}</div>
-    ${neighborhood(report.area)}</main><footer class="shell">Signoff repair report · Share this link only with people helping with the repair.</footer></body></html>`;
+    <header><nav class="shell" aria-label="Signoff"><span class="mark">Signoff</span><a class="refresh" href="/reports/${uuid}">Refresh report</a></nav></header>
+    <section class="hero"><div class="shell"><p>Work order L-${esc(report.id)}</p><h1>${title}</h1><span class="badge ${report.status === 'closed' ? 'closed' : ''}">${states[report.status]}</span></div></section>
+    <main class="shell">
+      <div class="action-grid">
+        <section class="card action-card" aria-labelledby="action"><h2 id="action">${action}</h2><p>${esc(report.guidance)}</p>
+          <div class="action-pair"><h3>Possible effects</h3><p class="muted">${esc(report.effects)}</p>${scenario?.inspection ? `<h3>Maintenance check</h3><p>${scenario.inspection}</p>` : ''}</div>
+        </section>
+        <figure class="card model-card">
+          ${report.renderStatus === 'ready' ? `<img src="/api/reports/${uuid}/render" alt="3D model: ${model}">` : `<p class="model-pending muted">${report.renderStatus === 'queued' ? 'The 3D model is being prepared. Refresh this page for an update.' : 'A 3D model is unavailable.'}</p>`}
+          <figcaption><strong>3D reference model</strong><p>${model}.</p><p class="muted">Generated from the reported scenario to explain the precaution.</p></figcaption>
+        </figure>
+      </div>
+      ${buildingContent(report.building, report)}${neighborhood(report.area)}
+    </main><footer class="shell">Signoff repair report · Share this link only with people helping with the repair.</footer></body></html>`;
 }
 
 export default {

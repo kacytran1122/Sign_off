@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS blender_renders (
   image bytea
 );
 ALTER TABLE blender_renders ADD COLUMN IF NOT EXISTS aid text;
+ALTER TABLE blender_renders ADD COLUMN IF NOT EXISTS completed_at timestamptz;
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='repair_contexts'::regclass AND conname='repair_contexts_aid_valid') THEN
