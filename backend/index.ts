@@ -15,6 +15,7 @@ import { startBlenderWorker } from './blender.js';
 import { startAreaWorker } from './area.js';
 import { reportObservationJoins, reportSnapshot, startReportPublisher } from './report-publication.js';
 import { localSavedReports } from './saved-reports-local.js';
+import { createSavedPhotonBridge, queueSavedPhotonReply } from './saved-photon.js';
 import { guidance, repairEffects, repairTimeZone, type Aid, type Issue } from './repair.js';
 import { activatePhotonMessage, downloadPhoto, listReceivedMessages, photoLimit, readMessage, RetryableError, sendText, tenantPhotoWindowSeconds, verifyEvent, type PhotonConnection } from './photon.js';
 import { handleMessage, photoOrderReply, prepareReport, remindManager } from './workflow.js';
@@ -40,6 +41,7 @@ await db.query(await readFile('backend/db/schema.sql', 'utf8'));
 const stopBlender = cfg.blenderRenderer && startBlenderWorker(db, cfg.blenderRenderer, cfg.property);
 const stopArea = cfg.repairContext && startAreaWorker(db, cfg);
 const stopReports = cfg.repairContext && startReportPublisher(db, cfg);
+const savedPhoton = createSavedPhotonBridge(db, cfg);
 
 const app = new Hono();
 const savedReports = localSavedReports(process.env.SAVED_REPORTS_DB);
@@ -295,9 +297,10 @@ async function tick() {
         const participant = cfg.participants.get(handle);
         if (!participant || project !== connection.photonProject) message = undefined;
         else if (message && !cfg.demo) message = await activatePhotonMessage(client, message, participant.role, project);
+        const linkReply = message ? await savedPhoton.link(message.text, handle) : undefined;
         let prepared;
         let managerPlan: ManagerPlan | undefined;
-        if (message) {
+        if (message && !linkReply) {
           let photo;
           if (message.attachmentId) photo = await downloadPhoto(connection, message.attachmentId);
           if (cfg.demo && object.demoImage) {
@@ -311,7 +314,9 @@ async function tick() {
         }
         await client.query('BEGIN');
         try {
-          if (message) {
+          if (message && linkReply) {
+            await queueSavedPhotonReply(client, handle, message, project, linkReply);
+          } else if (message) {
             await handleMessage(client, cfg, message, prepared, project, managerPlan);
             if (!cfg.demo && participant?.role === 'tenant') {
               const expectsPhoto = !message.attachmentId && (/^start[.!]?$/i.test(message.text) || photoOrderReply.test(message.text) ||
@@ -427,6 +432,7 @@ async function stop() {
   if (stopBlender) await stopBlender();
   if (stopArea) await stopArea();
   if (stopReports) await stopReports();
+  await savedPhoton.stop();
   savedReports.close();
   await db.end();
   await frontend.close();
