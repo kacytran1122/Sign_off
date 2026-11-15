@@ -17,8 +17,8 @@ import { reportObservationJoins, reportSnapshot, startReportPublisher } from './
 import { localSavedReports } from './saved-reports-local.js';
 import { createSavedPhotonBridge, queueSavedPhotonReply } from './saved-photon.js';
 import { guidance, repairEffects, repairTimeZone, type Aid, type Issue } from './repair.js';
-import { activatePhotonMessage, downloadPhoto, listReceivedMessages, photoLimit, readMessage, readyPhotonOutbox, RetryableError, sendText, tenantPhotoWindowSeconds, verifyEvent, type PhotonConnection } from './photon.js';
-import { handleMessage, photoOrderReply, prepareReport, remindManager } from './workflow.js';
+import { activatePhotonMessage, downloadPhoto, listReceivedMessages, photoLimit, readMessage, readyPhotonOutbox, RetryableError, sendText, tenantPhotoWindowSeconds, verifyEvent, type Photo, type PhotonConnection } from './photon.js';
+import { handleMessage, notify, photoOrderReply, prepareReport, remindManager } from './workflow.js';
 import { createAgents, planManager, runAgentTasks, runFollowUps } from './agents/index.js';
 import type { ManagerPlan } from './agents/scheduler.js';
 
@@ -299,9 +299,9 @@ async function tick() {
         else if (message && !cfg.demo) message = await activatePhotonMessage(client, message, participant.role, project);
         const linkReply = message ? await savedPhoton.link(message.text, handle) : undefined;
         let prepared;
+        let photo: Photo | undefined;
         let managerPlan: ManagerPlan | undefined;
         if (message && !linkReply) {
-          let photo;
           if (message.attachmentId) photo = await downloadPhoto(connection, message.attachmentId);
           if (cfg.demo && object.demoImage) {
             const [header, value] = (object.demoImage as string).split(',');
@@ -319,7 +319,11 @@ async function tick() {
           } else if (message) {
             await handleMessage(client, cfg, message, prepared, project, managerPlan);
             if (!cfg.demo && participant?.role === 'tenant') {
-              const expectsPhoto = !message.attachmentId && (/^start[.!]?$/i.test(message.text) || photoOrderReply.test(message.text) ||
+              const missingPhoto = !!message.attachmentId && !photo;
+              if (missingPhoto && message.text && prepared) {
+                await notify(client, handle, 'I couldn’t use the photo. You can resend it as a JPG, PNG, or WebP under 4 MB.');
+              }
+              const expectsPhoto = !photo && (missingPhoto || /^start[.!]?$/i.test(message.text) || photoOrderReply.test(message.text) ||
                 (prepared?.pending && !prepared.pending.photo &&
                   (prepared.interpreted?.isLeak || prepared.interpreted?.isDamage)));
               await client.query(`UPDATE conversations SET tenant_photo_until =

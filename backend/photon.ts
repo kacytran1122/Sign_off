@@ -118,6 +118,7 @@ export async function downloadPhoto(config: PhotonConnection, id: string): Promi
   }
   if (!response.ok) {
     await response.body?.cancel();
+    if (response.status === 404) return;
     throw new Error(`Photon attachment returned ${response.status}`);
   }
   const type = response.headers.get('content-type')?.split(';')[0] ?? '';

@@ -361,7 +361,7 @@ export async function handleMessage(db: PoolClient, cfg: Config, message: Messag
     return notify(db, handle, 'Include the work-order ID so I can find the repair.');
   }
   const requestedPhotoOrder = photoOrderReply.exec(message.text)?.[1];
-  if (requestedPhotoOrder && !prepared && !message.attachmentId) {
+  if (requestedPhotoOrder && !prepared) {
     await savePending(db, handle, { ...conversation.pending, photoOrderId: requestedPhotoOrder });
     return notify(db, handle, `Send the photo for ${code(requestedPhotoOrder)} now.`);
   }

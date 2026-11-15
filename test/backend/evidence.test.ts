@@ -10,7 +10,7 @@ import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
 import { startBlenderWorker } from '../../backend/blender.js';
 import { loadConfig } from '../../backend/config.js';
-import { readyPhotonOutbox, type Message, type Photo } from '../../backend/photon.js';
+import { downloadPhoto, readMessage, readyPhotonOutbox, type Message, type Photo } from '../../backend/photon.js';
 import { queueAreaNotices } from '../../backend/reports.js';
 import { handleMessage, prepareReport } from '../../backend/workflow.js';
 
@@ -55,8 +55,8 @@ async function runEvidenceCases(t: TestContext, pool: pg.Pool, url: string, dir:
   const ids = { leak: '1', stair: '2' };
   let sequence = 0;
 
-  async function send(handle: string, text: string, photo?: Photo, id = `message-${++sequence}`) {
-    const message: Message = { id, handle, text, space: handle, agent: 'fixture', attachmentId: photo && id };
+  async function send(handle: string, text: string, photo?: Photo, id = `message-${++sequence}`, attachmentId = photo && id) {
+    const message: Message = { id, handle, text, space: handle, agent: 'fixture', attachmentId };
     const client = await pool.connect();
     try {
       const prepared = await prepareReport(client, cfg, message, photo);
@@ -261,6 +261,33 @@ async function runEvidenceCases(t: TestContext, pool: pg.Pool, url: string, dir:
       { message_id: initial, photo: jpeg.bytes, photo_type: 'image/jpeg', target: cfg.manager },
       { message_id: separate, photo: png, photo_type: 'image/png', target: cfg.manager },
     ]);
+  });
+
+  await t.test('a missing Photon photo does not discard the leak caption', async (subtest) => {
+    subtest.mock.method(globalThis, 'fetch', async () => Response.json({ code: 'ATTACHMENT_NOT_FOUND' }, { status: 404 }));
+    const message = readMessage({
+      id: 'caption-with-missing-photo', status: 'received', platform: 'imessage',
+      space: { kind: 'direct', id: 'fixture-space' },
+      sentBy: { kind: 'human', handle: tenant }, receivedBy: { kind: 'agent', id: 'fixture-agent' },
+      content: { type: 'group', parts: [
+        { type: 'text', text: 'Water dripping at the reception window' },
+        { type: 'attachment', attachmentId: 'missing-photo' },
+      ] },
+    });
+    assert(message?.attachmentId);
+    const photo = await downloadPhoto({ photonProject: 'fixture-project', photonKey: 'fixture-key' }, message.attachmentId);
+    await send(message.handle, message.text, photo, message.id, message.attachmentId);
+    const report = () => pool.query<{ order_id: string; description: string; photo: Buffer | null }>(
+      'SELECT order_id,description,photo FROM reports WHERE message_id=$1', [message.id]);
+    const { rows } = await report();
+    assert.equal(rows.length, 1);
+    assert.match(rows[0].description, /Water dripping at the reception window/i);
+    assert.equal(rows[0].photo, null);
+
+    await send(tenant, `PHOTO L-${rows[0].order_id}`, undefined, 'failed-photo-retry', 'missing-photo');
+    assert.match(await lastText(tenant), new RegExp(`Send the photo for L-${rows[0].order_id} now`));
+    await send(tenant, '', jpeg);
+    assert.deepEqual((await report()).rows[0].photo, jpeg.bytes);
   });
 
 }

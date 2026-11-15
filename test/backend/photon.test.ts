@@ -124,7 +124,7 @@ describe('Photon transport', () => {
     }
   });
 
-  test('temporary attachment errors carry a retry delay while missing photos fail permanently', async (t) => {
+  test('temporary attachment errors carry a retry delay while missing photos allow text intake', async (t) => {
     let status = 409;
     t.mock.method(globalThis, 'fetch', async () => new Response('fixture', {
       status, headers: { 'Retry-After': '7' },
@@ -135,8 +135,9 @@ describe('Photon transport', () => {
         (error) => error instanceof RetryableError && error.retryAfter === 7 && error.message.endsWith(String(temporary)));
     }
     status = 404;
-    await assert.rejects(downloadPhoto(connection, 'photo'), (error) =>
-      error instanceof Error && !(error instanceof RetryableError) && error.message.endsWith('404'));
+    assert.equal(await downloadPhoto(connection, 'photo'), undefined);
+    status = 403;
+    await assert.rejects(downloadPhoto(connection, 'photo'), /Photon attachment returned 403/);
   });
 
   test('an attachment retry uses the same upload and send idempotency keys', async (t) => {
