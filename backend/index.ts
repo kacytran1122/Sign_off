@@ -14,6 +14,7 @@ import { damagePointInput } from './damage-point.js';
 import { startBlenderWorker } from './blender.js';
 import { startAreaWorker } from './area.js';
 import { reportObservationJoins, reportSnapshot, startReportPublisher } from './report-publication.js';
+import { localSavedReports } from './saved-reports-local.js';
 import { guidance, repairEffects, repairTimeZone, type Aid, type Issue } from './repair.js';
 import { activatePhotonMessage, downloadPhoto, listReceivedMessages, photoLimit, readMessage, RetryableError, sendText, tenantPhotoWindowSeconds, verifyEvent, type PhotonConnection } from './photon.js';
 import { handleMessage, photoOrderReply, prepareReport, remindManager } from './workflow.js';
@@ -41,6 +42,9 @@ const stopArea = cfg.repairContext && startAreaWorker(db, cfg);
 const stopReports = cfg.repairContext && startReportPublisher(db, cfg);
 
 const app = new Hono();
+const savedReports = localSavedReports(process.env.SAVED_REPORTS_DB);
+app.all('/api/saved-reports', (c) => savedReports.fetch(c.req.raw));
+app.all('/api/saved-reports/*', (c) => savedReports.fetch(c.req.raw));
 const verifier = cfg.webhookSecret ? new Webhook(cfg.webhookSecret) : undefined;
 const eventTypes = new Set(['message.received', 'message.delivered', 'message.failed']);
 
@@ -423,6 +427,7 @@ async function stop() {
   if (stopBlender) await stopBlender();
   if (stopArea) await stopArea();
   if (stopReports) await stopReports();
+  savedReports.close();
   await db.end();
   await frontend.close();
 }

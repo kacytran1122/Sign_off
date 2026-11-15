@@ -22,6 +22,7 @@ const child = spawn(process.execPath, ['build/backend/index.js'], {
   stdio: 'inherit',
   env: {
     ...process.env,
+    ...(temporary ? { SAVED_REPORTS_DB: ':memory:' } : {}),
     DEMO_MODE: String(!photonTest),
     PHOTON_TEST_MODE: String(photonTest),
     PHOTON_SPONSOR_REHEARSAL: String(sponsorRehearsal),
