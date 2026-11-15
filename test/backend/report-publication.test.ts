@@ -28,6 +28,31 @@ test('shared repair summaries include rounded neighborhood and matched building 
   assert.equal(reportSnapshot(publicProperty, { ...row, property_match: false }).building, undefined);
 });
 
+test('shared summaries preserve climate observations and counted rodent periods without retaining 311 case details', async () => {
+  const config = await loadConfig({ DEMO_MODE: 'true', DATABASE_URL: 'test-database-url' });
+  const rodentPeriods = [
+    { start_date: '2026-10-16', through_date: '2026-11-14', mentions: 0 },
+    { start_date: '2026-09-16', through_date: '2026-10-15', mentions: 1 },
+  ];
+  const area = {
+    city: 'HOUSTON',
+    store: 'TimescaleDB',
+    history: [{ time: '2026-11-14T01:00:00.000Z', temperatureF: 56, feelsLikeF: 54, humidity: 73 }],
+    observations: { hours: 1, lowFeelsLikeF: 54, highFeelsLikeF: 54, lowHumidity: 73, highHumidity: 73 },
+    coverage: {
+      start_date: '2026-08-17', through_date: '2026-11-14', store: 'Local PostgreSQL',
+      indicators: { water: 2, waste: 3, rodentMentions: 1 },
+      rodentPeriods,
+      cases: [{ ticket: 'private-case', address: 'private-address' }],
+    },
+  };
+  const report = reportSnapshot(config.property, {
+    id: '13', status: 'open', issue: 'leak', aid: 'bucket', property_match: false, area,
+  });
+  const { cases: _cases, ...publicCoverage } = area.coverage;
+  assert.deepEqual(report.area, { ...area, coverage: publicCoverage });
+});
+
 test('a photo-matched inspection point changes the shared plan without exposing the pin', async () => {
   const config = await loadConfig({ DEMO_MODE: 'true', DATABASE_URL: 'test-database-url' });
   const room = { ...config.property.landmarks[0], matterportRoomId: 'PrivateRoom' };

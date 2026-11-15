@@ -224,3 +224,50 @@ test('the publisher rejects oversized bodies before storing them, including leng
   assert(canceled);
   assert(chunks < 8);
 });
+
+test('Tiger Data weather coverage and Houston rodent requests retain their source and dates', async () => {
+  const { request, publish } = await workerFixture();
+  const area = {
+    city: 'Houston', store: 'TimescaleDB',
+    observations: { hours: 22, lowFeelsLikeF: 63, highFeelsLikeF: 82, lowHumidity: 48, highHumidity: 83 },
+    coverage: {
+      start_date: '2026-08-17', through_date: '2026-11-14', store: 'TimescaleDB',
+      indicators: { water: 6, waste: 4, rodentMentions: 1 },
+      rodentPeriods: [
+        { start_date: '2026-10-16', through_date: '2026-11-14', mentions: 1, raw: 'sensitive' },
+        { start_date: '2026-09-16', through_date: '2026-10-15', mentions: 0 },
+      ],
+    },
+  };
+  assert.equal((await publish({ ...example, area })).status, 204);
+  const html = await (await request(`/reports/${id}`)).text();
+  assert.match(html, /Hours with readings<\/dt><dd>22 \/ 24/);
+  assert.match(html, /63°F–82°F/);
+  assert.match(html, /48%–83%/);
+  assert.match(html, /Tiger Data \(TimescaleDB\)/);
+  assert.match(html, /requests mentioning mice or rats<\/dt><dd>1/);
+  assert.match(html, /<time>2026-09-16<\/time> to <time>2026-10-15<\/time><\/th><td>0<\/td>/);
+  assert.match(html, /Avoid sweeping or vacuuming droppings/);
+  const { area: saved } = await (await request(`/api/reports/${id}`)).json();
+  assert.deepEqual(saved.observations, area.observations);
+  assert.equal(saved.coverage.rodentPeriods[1].mentions, 0);
+  assert(!Object.hasOwn(saved.coverage.rodentPeriods[0], 'raw'));
+
+  assert.equal((await publish({ ...example, area: {
+    ...area, city: 'Los Angeles', observations: { ...area.observations, hours: 25 },
+  } })).status, 204);
+  const losAngeles = await (await request(`/reports/${id}`)).text();
+  assert.match(losAngeles, /Nearby mouse and rat request counts are unavailable/);
+  assert.match(losAngeles, /LA County rodent reporting/);
+  assert.doesNotMatch(losAngeles, /Hours with readings|Recent 30-day periods/);
+
+  assert.equal((await publish({ ...example, area: {
+    ...area, coverage: {
+      ...area.coverage, indicators: { ...area.coverage.indicators, rodentMentions: 0 },
+      rodentPeriods: [area.coverage.rodentPeriods[0], { ...area.coverage.rodentPeriods[1], through_date: '2026-10-14' }],
+    },
+  } })).status, 204);
+  const zero = await (await request(`/reports/${id}`)).text();
+  assert.match(zero, /requests mentioning mice or rats<\/dt><dd>0/);
+  assert.doesNotMatch(zero, /Recent 30-day periods/);
+});

@@ -66,17 +66,52 @@ export const areaSchema = `
   );
   ALTER TABLE neighborhood_coverage ADD COLUMN IF NOT EXISTS rodent_mentions boolean NOT NULL DEFAULT false;`;
 
+type RodentPeriod = { start_date: string; through_date: string; mentions: number };
+type NeighborhoodCoverage = {
+  start_date: string;
+  through_date: string;
+  indicators: { water: number; waste: number; rodentMentions?: number };
+  rodentPeriods: RodentPeriod[] | null;
+};
+
 export function readNeighborhoodCoverage(source: pg.Pool | pg.Client, city: string, latitude: number, longitude: number) {
-  return source.query<{ start_date: string; through_date: string; indicators: {
-    water: number; waste: number; rodentMentions?: number;
-  } }>(`
-    SELECT c.start_date::text, c.through_date::text, (SELECT jsonb_build_object(
-      'water',count(*) FILTER(WHERE r.kind='water'), 'waste',count(*) FILTER(WHERE r.kind='waste')) ||
-      CASE WHEN c.rodent_mentions THEN jsonb_build_object('rodentMentions',count(*) FILTER(WHERE r.kind='rodent_mention'))
-        ELSE '{}'::jsonb END
-      FROM neighborhood_events r WHERE r.city=c.city AND r.observed_on BETWEEN c.start_date AND c.through_date
-      AND power((r.latitude-$2)*111.2,2)+power((r.longitude-$3)*111.2*cos(radians($2)),2)<=1) AS indicators
-    FROM neighborhood_coverage c WHERE c.city=$1`, [city, latitude, longitude]);
+  return source.query<NeighborhoodCoverage>(`
+    SELECT c.start_date::text, c.through_date::text, stats.indicators,
+      CASE WHEN c.rodent_mentions AND c.through_date-c.start_date >= 59 THEN jsonb_build_array(
+        jsonb_build_object('start_date',(c.through_date-29)::text,'through_date',c.through_date::text,'mentions',stats.recent),
+        jsonb_build_object('start_date',(c.through_date-59)::text,'through_date',(c.through_date-30)::text,'mentions',stats.prior)
+      ) END AS "rodentPeriods"
+    FROM neighborhood_coverage c
+    CROSS JOIN LATERAL (
+      SELECT jsonb_build_object('water',count(*) FILTER(WHERE r.kind='water'), 'waste',count(*) FILTER(WHERE r.kind='waste')) ||
+        CASE WHEN c.rodent_mentions THEN jsonb_build_object('rodentMentions',count(*) FILTER(WHERE r.kind='rodent_mention'))
+          ELSE '{}'::jsonb END AS indicators,
+        count(*) FILTER(WHERE r.kind='rodent_mention' AND r.observed_on>=c.through_date-29) AS recent,
+        count(*) FILTER(WHERE r.kind='rodent_mention' AND r.observed_on BETWEEN c.through_date-59 AND c.through_date-30) AS prior
+      FROM neighborhood_events r
+      WHERE r.city=c.city AND r.observed_on BETWEEN c.start_date AND c.through_date
+        AND power((r.latitude-$2)*111.2,2)+power((r.longitude-$3)*111.2*cos(radians($2)),2)<=1
+    ) stats WHERE c.city=$1`, [city, latitude, longitude]);
+}
+
+export async function readNeighborhoodHistory(source: pg.Pool | pg.Client, latitude: number, longitude: number, timescale: boolean) {
+  const bucket = timescale ? "time_bucket('1 hour', observed_at)" : "date_trunc('hour', observed_at, 'UTC')";
+  const { rows: history } = await source.query<{ time: Date; temperatureF: number; feelsLikeF: number; humidity: number }>(`
+    SELECT ${bucket} AS time, round(avg(temperature_f)) AS "temperatureF",
+      round(avg(feels_like_f)) AS "feelsLikeF", round(avg(humidity)) AS humidity
+    FROM neighborhood_samples WHERE latitude=$1 AND longitude=$2
+      AND observed_at >= date_trunc('hour', now(), 'UTC') - interval '23 hours' AND observed_at <= now()
+    GROUP BY 1 ORDER BY 1`, [latitude, longitude]);
+  const feelsLike = history.map((row) => row.feelsLikeF);
+  const humidity = history.map((row) => row.humidity);
+  return {
+    history,
+    observations: history.length ? {
+      hours: history.length,
+      lowFeelsLikeF: Math.min(...feelsLike), highFeelsLikeF: Math.max(...feelsLike),
+      lowHumidity: Math.min(...humidity), highHumidity: Math.max(...humidity),
+    } : undefined,
+  };
 }
 
 export function startAreaWorker(db: pg.Pool, config: Config) {
@@ -85,7 +120,8 @@ export function startAreaWorker(db: pg.Pool, config: Config) {
   let task: Promise<void> | undefined;
   let models: z.infer<typeof modelSchema>[] = [];
   let localPrepared = false;
-  let tigerPrepared = false;
+  let tigerCoverageReady = false;
+  let tigerHistoryReady = false;
   const loadModel = readFile('backend/config/heat-models.json', 'utf8')
     .then((contents) => { models = z.array(modelSchema).parse(JSON.parse(contents)); }).catch(() => {});
   let ticker: ReturnType<typeof setInterval>;
@@ -117,10 +153,13 @@ export function startAreaWorker(db: pg.Pool, config: Config) {
       }
       if (tiger) {
         try {
-          if (!tigerPrepared) {
+          if (!tigerCoverageReady) {
             await tiger.query(areaSchema);
+            tigerCoverageReady = true;
+          }
+          if (!tigerHistoryReady) {
             await tiger.query("SELECT create_hypertable('neighborhood_samples', by_range('observed_at'), if_not_exists=>true, migrate_data=>true)");
-            tigerPrepared = true;
+            tigerHistoryReady = true;
           }
           store = tiger;
         }
@@ -142,16 +181,30 @@ export function startAreaWorker(db: pg.Pool, config: Config) {
           SELECT (s->>0)::timestamptz,$1,$2,(s->>1)::float8,(s->>2)::float8,(s->>3)::float8
           FROM jsonb_array_elements($3::jsonb) s ON CONFLICT DO NOTHING`, [latitude, longitude, JSON.stringify(samples)]);
         try { await writeSamples(store); }
-        catch { store = db; await writeSamples(store); }
+        catch (error) {
+          if (store === db) throw error;
+          store = db;
+          await writeSamples(store);
+        }
       }
-      const bucket = store === tiger ? "time_bucket('1 hour', observed_at)" : "date_trunc('hour', observed_at)";
-      const history = (await store.query<{ time: Date; feelsLikeF: number }>(`SELECT ${bucket} AS time, round(avg(feels_like_f)) AS "feelsLikeF"
-        FROM neighborhood_samples WHERE latitude=$1 AND longitude=$2 AND observed_at >= now() - interval '24 hours'
-        GROUP BY 1 ORDER BY 1`, [latitude, longitude]).catch(() => ({ rows: [] }))).rows;
-      const readCoverage = (source: pg.Pool) => readNeighborhoodCoverage(source, city, latitude, longitude);
-      const coverage = city === 'LOS ANGELES' ? await losAngelesIndicators(latitude, longitude).catch(() => undefined)
-        : (await readCoverage(store).catch(() => readCoverage(db))).rows[0]
-          ?? (store === db ? undefined : (await readCoverage(db)).rows[0]);
+      const readHistory = (source: pg.Pool) =>
+        readNeighborhoodHistory(source, latitude, longitude, source === tiger).catch(() => undefined);
+      let history = await readHistory(store);
+      if (!history?.observations && store !== db) {
+        store = db;
+        history = await readHistory(store);
+      }
+
+      const readCoverage = async (source: pg.Pool) => {
+        const result = await readNeighborhoodCoverage(source, city, latitude, longitude).catch(() => undefined);
+        const record = result?.rows[0];
+        return record && { ...record, rodentPeriods: record.rodentPeriods ?? undefined,
+          store: source === tiger ? 'TimescaleDB' : 'Local PostgreSQL' };
+      };
+      const coverage = (tiger && tigerCoverageReady ? await readCoverage(tiger) : undefined)
+        ?? await readCoverage(db)
+        ?? (city === 'LOS ANGELES' ? await losAngelesIndicators(latitude, longitude)
+          .then((record) => record && { ...record, store: 'City 311' }).catch(() => undefined) : undefined);
       await loadModel;
       const model = models.find((candidate) => candidate.city.toUpperCase() === city);
       const modelDay = weather?.current.time.slice(0, 10);
@@ -166,8 +219,8 @@ export function startAreaWorker(db: pg.Pool, config: Config) {
         time: weather.daily.time.slice(-3), apparent_temperature_max: weather.daily.apparent_temperature_max.slice(-3),
       } };
       await db.query('UPDATE repair_contexts SET area=$2,updated_at=now() WHERE order_id=$1', [row.order_id,
-        { latitude, longitude, city, timeZone: weather?.timezone, weather: currentWeather, coverage, heat, history,
-          store: store === tiger ? 'TimescaleDB' : 'Local PostgreSQL' }]);
+        { latitude, longitude, city, timeZone: weather?.timezone, weather: currentWeather, coverage, heat, ...history,
+          store: history?.observations ? (store === tiger ? 'TimescaleDB' : 'Local PostgreSQL') : undefined }]);
     } catch {
       await db.query('UPDATE repair_contexts SET updated_at=now() WHERE order_id=$1', [row.order_id]);
       console.warn('Could not refresh the work order neighborhood context');

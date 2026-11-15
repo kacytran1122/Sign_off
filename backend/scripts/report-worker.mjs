@@ -129,6 +129,33 @@ async function readJson(request) {
   return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(data.subarray(0, size)));
 }
 
+function cleanObservations(input) {
+  const hours = boundedNumber(input?.hours, 1, 24);
+  const lowFeelsLikeF = boundedNumber(input?.lowFeelsLikeF, -150, 250);
+  const highFeelsLikeF = boundedNumber(input?.highFeelsLikeF, -150, 250);
+  const lowHumidity = boundedNumber(input?.lowHumidity, 0, 100);
+  const highHumidity = boundedNumber(input?.highHumidity, 0, 100);
+  if (!Number.isInteger(hours) || lowFeelsLikeF === undefined || highFeelsLikeF === undefined ||
+      lowHumidity === undefined || highHumidity === undefined || lowFeelsLikeF > highFeelsLikeF || lowHumidity > highHumidity) return;
+  return { hours, lowFeelsLikeF, highFeelsLikeF, lowHumidity, highHumidity };
+}
+
+function cleanRodentPeriods(periods, start, through) {
+  if (!Array.isArray(periods) || periods.length !== 2) return;
+  const windows = periods.map((period) => ({
+    start_date: dateOnly(period?.start_date),
+    through_date: dateOnly(period?.through_date),
+    mentions: boundedNumber(period?.mentions, 0, Number.MAX_SAFE_INTEGER),
+  }));
+  for (const window of windows) {
+    if (!window.start_date || !window.through_date || window.start_date < start || window.through_date > through ||
+        Date.parse(window.through_date) - Date.parse(window.start_date) !== 29 * day || !Number.isInteger(window.mentions)) return;
+  }
+  const [latest, prior] = windows;
+  if (latest.through_date !== through || Date.parse(latest.start_date) - Date.parse(prior.through_date) !== day) return;
+  return windows;
+}
+
 function cleanArea(input) {
   if (!record(input)) return;
   const lat = boundedNumber(input.latitude, -85, 85);
@@ -178,8 +205,13 @@ function cleanArea(input) {
     store: ['TimescaleDB', 'Local PostgreSQL'].includes(input.store) ? input.store : undefined,
     weather: Object.values(currentWeather).some((number) => typeof number === 'number') || daily.time.length
       ? { current: currentWeather, daily } : undefined,
+    observations: cleanObservations(input.observations),
     coverage: start && through && start <= through && Number.isInteger(water) && Number.isInteger(waste)
-      ? { start_date: start, through_date: through, indicators: { water, waste, rodentMentions } } : undefined,
+      ? {
+          start_date: start, through_date: through, indicators: { water, waste, rodentMentions },
+          store: ['TimescaleDB', 'Local PostgreSQL', 'City 311'].includes(coverage.store) ? coverage.store : undefined,
+          rodentPeriods: rodentMentions === undefined ? undefined : cleanRodentPeriods(coverage.rodentPeriods, start, through),
+        } : undefined,
     heat: heat.typicalHighF !== undefined && heat.validationMaeF !== undefined ? heat : undefined,
     history,
   };
@@ -315,6 +347,21 @@ function lineChart(id, title, style, points, formatter, maximumGap) {
   </figure>`;
 }
 
+function observationSummary(observations, store) {
+  if (!observations) return '';
+  const { hours, lowFeelsLikeF, highFeelsLikeF, lowHumidity, highHumidity } = observations;
+  const source = store === 'TimescaleDB' ? 'Tiger Data (TimescaleDB)' : store;
+  return `<div class="observation-summary">
+    <h4>Past 24 hours</h4>
+    <dl class="weather-current">
+      <div><dt>Hours with readings</dt><dd>${hours} / 24</dd></div>
+      <div><dt>Hourly feels-like range</dt><dd>${temperature(lowFeelsLikeF)}–${temperature(highFeelsLikeF)}</dd></div>
+      <div><dt>Hourly humidity range</dt><dd>${rounded(lowHumidity)}%–${rounded(highHumidity)}%</dd></div>
+    </dl>
+    <p class="muted">Outdoor readings averaged by hour.${source ? ` Stored in ${esc(source)}.` : ''}</p>
+  </div>`;
+}
+
 function heatContent(area) {
   const weather = area?.weather;
   const current = weather?.current;
@@ -330,12 +377,29 @@ function heatContent(area) {
   return `<section class="card weather-card" aria-labelledby="weather-heading">
     <h3 id="weather-heading">Outdoor heat and humidity</h3>
     ${currentValues.length ? `<dl class="weather-current">${currentValues.map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join('')}</dl>${current.time ? `<p class="muted">Observed ${esc(current.time.replace('T', ' '))} local time.</p>` : ''}` : '<p class="muted">Current outdoor conditions are unavailable.</p>'}
+    ${observationSummary(area?.observations, area?.store)}
     <div class="chart-grid">
       ${lineChart('observed', 'Recent outdoor readings', 'observed', history, formatter, 1.5 * hour)}
       ${lineChart('forecast', 'Forecast feels-like highs', 'forecast', forecast, forecastTimeFormat, 1.5 * day)}
     </div>
     ${area?.heat ? `<div class="estimate"><p><strong>Seasonal model estimate ${temperature(area.heat.typicalHighF)}</strong> feels like</p><p class="muted">Average validation error ${rounded(area.heat.validationMaeF, 1)}°F${area.heat.trainedThrough ? ` · Trained through ${esc(area.heat.trainedThrough)}` : ''}.</p></div>` : ''}
-    <p class="muted attribution">Indoor conditions require an on-site check.${history.length ? ` Recent readings shown in ${esc(zone)}${area.store ? ` and stored in ${esc(area.store)}` : ''}.` : ''}${weather ? ' <a href="https://open-meteo.com/" rel="noreferrer">Weather by Open-Meteo</a>.' : ''}</p>
+    <p class="muted attribution">Indoor conditions require an on-site check.${history.length ? ` Recent readings shown in ${esc(zone)}${area.store && !area.observations ? ` and stored in ${esc(area.store)}` : ''}.` : ''}${weather ? ' <a href="https://open-meteo.com/" rel="noreferrer">Weather by Open-Meteo</a>.' : ''}</p>
+  </section>`;
+}
+
+function rodentContent(city, coverage, records) {
+  const count = coverage?.indicators.rodentMentions;
+  const rows = (coverage?.rodentPeriods ?? []).map((window) =>
+    `<tr><th scope="row"><time>${esc(window.start_date)}</time> to <time>${esc(window.through_date)}</time></th><td>${rounded(window.mentions)}</td></tr>`).join('');
+  return `<section class="card rodent-card" aria-labelledby="rodent-heading">
+    <h3 id="rodent-heading">Mice and rats</h3>
+    ${count !== undefined ? `<dl class="local-counts"><div><dt>311 requests mentioning mice or rats</dt><dd>${rounded(count)}</dd></div></dl>
+      <p class="muted">Houston ${records} within 1 km from ${esc(coverage.start_date)} to ${esc(coverage.through_date)}.${coverage.store === 'TimescaleDB' ? ' Stored in Tiger Data (TimescaleDB).' : ''}</p>
+      ${rows ? `<table><caption>Recent 30-day periods</caption><thead><tr><th scope="col">Dates</th><th scope="col">Requests</th></tr></thead><tbody>${rows}</tbody></table>` : ''}` :
+      '<p class="muted">Nearby mouse and rat request counts are unavailable for this report.</p>'}
+    <p>An on-site check can establish whether mice or rats are present. Tell maintenance if you see rodents, droppings, or gnaw marks.</p>
+    <p>Keep food and trash sealed. Ask maintenance to repair leaks and check for openings around pipes and doors. Avoid sweeping or vacuuming droppings.</p>
+    <p class="muted"><a href="https://www.cdc.gov/healthy-pets/rodent-control/index.html" rel="noreferrer">CDC rodent guidance</a>${city === 'LOS ANGELES' ? ' · <a href="https://publichealth.lacounty.gov/eh/safety/rats.htm" rel="noreferrer">LA County rodent reporting</a>' : ''}</p>
   </section>`;
 }
 
@@ -343,7 +407,8 @@ function neighborhood(area) {
   const mapped = Number.isFinite(area?.longitude) && Number.isFinite(area?.latitude);
   const center = mapped ? encodeURIComponent(`${area.longitude.toFixed(3)},${area.latitude.toFixed(3)}`) : '';
   const coverage = area?.coverage;
-  const source = { 'LOS ANGELES': 'https://data.lacity.org/d/2cy6-i7zn', HOUSTON: 'https://my311.houstontx.gov/servicerequestdata.html' }[area?.city?.toUpperCase()];
+  const city = area?.city?.toUpperCase();
+  const source = { 'LOS ANGELES': 'https://data.lacity.org/d/2cy6-i7zn', HOUSTON: 'https://my311.houstontx.gov/servicerequestdata.html' }[city];
   const records = source ? `<a href="${source}" rel="noreferrer">city 311 reports</a>` : 'city 311 reports';
   return `<section class="section" aria-labelledby="neighborhood">
     <div class="section-title"><h2 id="neighborhood">Neighborhood conditions</h2>${area?.city ? `<p class="muted">${esc(area.city)}</p>` : ''}</div>
@@ -355,11 +420,9 @@ function neighborhood(area) {
       ${coverage ? `<dl class="local-counts">
         <div><dt>Water-related</dt><dd>${rounded(coverage.indicators.water)}</dd></div>
         <div><dt>Waste-related</dt><dd>${rounded(coverage.indicators.waste)}</dd></div>
-        ${coverage.indicators.rodentMentions !== undefined ? `<div><dt>Rodent mentions</dt><dd>${rounded(coverage.indicators.rodentMentions)}</dd></div>` : ''}
       </dl><p class="muted">Source: ${records} within 1 km from ${esc(coverage.start_date)} to ${esc(coverage.through_date)}.</p>` : '<p class="muted">Nearby 311 report counts are unavailable.</p>'}
-      ${coverage?.indicators.rodentMentions !== undefined ? '<p class="muted">Rodent mentions are Houston 311 requests in the same area and dates that mention mice or rats.</p>' : ''}
-      <p class="muted">An on-site check can establish whether mice or rats are present. Tell maintenance if you see rodents, droppings, or gnaw marks.</p>
     </section>
+    ${rodentContent(city, coverage, records)}
   </section>`;
 }
 
@@ -469,6 +532,9 @@ main{padding-block:clamp(1.45rem,4vw,3rem)}
 .chart details{font-size:.83rem;margin-top:.36rem}.chart summary{cursor:pointer;color:#632c50;padding:.18rem 0}
 .chart table{width:100%;border-collapse:collapse;margin-top:.4rem;text-align:left}.chart td,.chart th{padding:.2rem .3rem;border-bottom:1px solid #eee3eb}.chart td:last-child,.chart th:last-child{text-align:right}.chart tbody th{font-weight:400}
 .estimate{background:#f4edf1;border-radius:.58rem;margin-top:.8rem;padding:.66rem .8rem}.estimate strong{font-weight:650}
+.observation-summary,.rodent-card{margin-top:.9rem}.observation-summary h4{font-size:.9rem;margin:0}
+.rodent-card p{margin-top:.6rem}.rodent-card table{width:100%;margin-top:.7rem;border-collapse:collapse;text-align:left;font-size:.85rem;font-variant-numeric:tabular-nums}
+.rodent-card caption{text-align:left;font-weight:650;padding:0 0 .35rem}.rodent-card td,.rodent-card th{padding:.4rem .5rem;border-bottom:1px solid #eee3eb}.rodent-card tbody th{font-weight:400}.rodent-card td,.rodent-card th:last-child{text-align:right}
 .satellite-card{margin-bottom:.9rem}
 .satellite-map{display:block;width:100%;height:clamp(24rem,44vw,39rem);border:0;border-radius:.65rem;background:#f4edef;margin-top:.72rem}
 .property-view{margin-top:.9rem}.property-view summary{cursor:pointer;font-weight:650;color:#632c50}

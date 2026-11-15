@@ -7,7 +7,9 @@ import { guidance, repairEffects, type Aid, type Issue } from './repair.js';
 import { repairScenario } from './repair-scenario.js';
 import { assessRepairInspection } from './inspection.js';
 
-const historySample = z.object({ time: z.string(), feelsLikeF: z.number() });
+const historySample = z.object({
+  time: z.string(), feelsLikeF: z.number(), temperatureF: z.number().optional(), humidity: z.number().min(0).max(100).optional(),
+});
 const reportArea = z.object({
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
@@ -21,10 +23,19 @@ const reportArea = z.object({
   }).optional(),
   coverage: z.object({
     start_date: z.string(), through_date: z.string(),
+    store: z.enum(['TimescaleDB', 'Local PostgreSQL', 'City 311']).optional(),
     indicators: z.object({ water: z.number().int().nonnegative(), waste: z.number().int().nonnegative(), rodentMentions: z.number().int().nonnegative().optional() }),
+    rodentPeriods: z.array(z.object({
+      start_date: z.string(), through_date: z.string(), mentions: z.number().int().nonnegative(),
+    })).length(2).optional(),
   }).optional(),
   heat: z.object({ typicalHighF: z.number(), validationMaeF: z.number(), trainedThrough: z.string() }).optional(),
   history: z.array(historySample).max(25).optional(),
+  observations: z.object({
+    hours: z.number().int().min(1).max(24),
+    lowFeelsLikeF: z.number(), highFeelsLikeF: z.number(),
+    lowHumidity: z.number().min(0).max(100), highHumidity: z.number().min(0).max(100),
+  }).optional(),
 });
 
 type ReportRow = {
@@ -84,7 +95,7 @@ export function reportSnapshot(property: Config['property'], row: ReportRow) {
 export function startReportPublisher(db: Pool, config: Config) {
   if (!config.reportPublish) return;
   const { origin, token } = config.reportPublish;
-  const evidenceVersion = createHash('sha256').update('report-v6:').update(JSON.stringify(config.property)).digest('hex');
+  const evidenceVersion = createHash('sha256').update('report-v7:').update(JSON.stringify(config.property)).digest('hex');
   let active: Promise<void> | undefined;
 
   async function publish() {
