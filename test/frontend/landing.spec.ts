@@ -12,12 +12,17 @@ test('the landing page introduces Signoff and leads to the repair workspace', as
   await expect(page.getByRole('heading', { name: 'From your first text to a confirmed fix.' })).toBeVisible();
 
   const showcase = page.getByRole('region', { name: 'See the repair in Signoff.' });
-  const screenshots = showcase.getByRole('img');
-  await expect(screenshots).toHaveCount(2);
-  for (const image of await screenshots.all()) {
-    await image.scrollIntoViewIfNeeded();
-    await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
-  }
+  await expect(showcase.getByRole('tab', { name: 'Tenant report' })).toHaveAttribute('aria-selected', 'true');
+  const review = showcase.getByRole('tab', { name: 'Manager review' });
+  await review.click();
+  const order = showcase.getByRole('tabpanel', { name: 'Manager review' }).getByRole('img');
+  await expect.poll(() => order.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
+  await review.press('ArrowRight');
+  const verification = showcase.getByRole('tab', { name: 'Tenant confirmation' });
+  await expect(verification).toHaveAttribute('aria-selected', 'true');
+  await expect(verification).toBeFocused();
+  const timeline = showcase.getByRole('tabpanel', { name: 'Tenant confirmation' }).getByRole('img');
+  await expect.poll(() => timeline.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
 
   await page.getByRole('banner').getByRole('link', { name: 'Who it’s for', exact: true }).click();
   await expect(page).toHaveURL(/#who$/);

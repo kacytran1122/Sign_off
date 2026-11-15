@@ -2,8 +2,8 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { SignoffLogo } from '../brand/SignoffLogo';
 import scheduledWorkOrder from './assets/scheduled-work-order.webp';
-import tenantConfirmation from './assets/tenant-confirmation.webp';
 import { PhonePreview } from './PhonePreview';
+import { RepairExample } from './RepairExample';
 import styles from './landing.module.css';
 
 const steps = [
@@ -25,7 +25,7 @@ function Arrow({ down = false }: { down?: boolean }) {
 }
 
 function BrandLink() {
-  return <Link className={styles.brand} href="/" aria-label="Signoff home"><SignoffLogo /></Link>;
+  return <Link className={styles.brand} href="/" aria-label="Signoff home"><SignoffLogo variant="light" /></Link>;
 }
 
 function HowItWorks() {
@@ -45,36 +45,26 @@ function HowItWorks() {
 }
 
 function WorkspaceShowcase() {
-  return <section className={`${styles.wrap} ${styles.workspaceShowcase}`} aria-labelledby="workspace-title">
-    <div className={styles.featureStage}>
-      <div className={styles.workspaceIntro}>
-        <h2 id="workspace-title">See the repair <em>in Signoff.</em></h2>
-        <p>The manager sees the tenant’s photo, where to inspect, and when the crew is due. The timeline shows when the tenant confirms the fix.</p>
-      </div>
-      <div className={styles.captureGrid}>
-        <figure className={styles.capture}>
-          <Image src={scheduledWorkOrder} alt="Signoff work order showing a scheduled inspection, the reported room, and the tenant’s ceiling photo" unoptimized />
-          <figcaption>Scheduled work order</figcaption>
-        </figure>
-        <figure className={`${styles.capture} ${styles.timelineCapture}`}>
-          <Image src={tenantConfirmation} alt="Signoff timeline showing the report, scheduled inspection, repair, tenant confirmation, and closure" unoptimized />
-          <figcaption>Repair timeline</figcaption>
-        </figure>
-      </div>
-      <p className={styles.captureCredit}>Screens from the Signoff demo</p>
+  return <section className={`${styles.wrap} ${styles.workspaceShowcase}`} id="example" aria-labelledby="workspace-title">
+    <div className={styles.workspaceIntro}>
+      <p className={styles.eyebrow}>Explore a repair</p>
+      <h2 id="workspace-title">See the repair <em>in Signoff.</em></h2>
+      <p>Switch between the tenant report, the manager’s work order, and the final confirmation.</p>
     </div>
+    <RepairExample />
   </section>;
 }
 
-export default function Landing({ demo }: { demo: boolean }) {
-  const appLabel = demo ? 'Try the demo' : 'Open Signoff';
+export default function Landing({ demo, previewOnly = false }: { demo: boolean; previewOnly?: boolean }) {
+  const destination = previewOnly ? '#example' : '/app';
+  const appLabel = previewOnly ? 'Explore the demo' : demo ? 'Try the demo' : 'Open Signoff';
   return <div className={styles.landing}>
     <a className={styles.skipLink} href="#content">Skip to content</a>
     <header className={styles.header}>
       <nav className={`${styles.wrap} ${styles.navigation}`} aria-label="Main navigation">
         <BrandLink />
         <div className={styles.navLinks}><a href="#how">How it works</a><a href="#who">Who it’s for</a></div>
-        <Link className={styles.primary} href="/app">Get started <Arrow /></Link>
+        <a className={styles.primary} href={destination}>{previewOnly ? 'See the demo' : 'Get started'} <Arrow /></a>
       </nav>
     </header>
     <main id="content" tabIndex={-1}>
@@ -85,11 +75,17 @@ export default function Landing({ demo }: { demo: boolean }) {
             <h1 id="headline">The repair isn’t done until the tenant <em>says so.</em></h1>
             <p className={styles.heroDescription}>Report a problem with a photo. Follow the repair and confirm it’s fixed, all in one text thread.</p>
             <div className={styles.actions}>
-              <Link className={styles.primary} href="/app">{appLabel} <Arrow /></Link>
+              <a className={styles.primary} href={destination}>{appLabel} <Arrow /></a>
               <a className={styles.secondary} href="#how">See how it works <Arrow down /></a>
             </div>
           </div>
-          <PhonePreview />
+          <div className={styles.heroStage}>
+            <figure className={styles.heroWindow}>
+              <figcaption><SignoffLogo variant="light" /><span>Example work order</span></figcaption>
+              <Image src={scheduledWorkOrder} alt="Example Signoff work order with the scheduled visit and inspection area" preload unoptimized />
+            </figure>
+            <div className={styles.heroPhone}><PhonePreview /></div>
+          </div>
         </div>
       </section>
       <HowItWorks />
@@ -118,8 +114,8 @@ export default function Landing({ demo }: { demo: boolean }) {
       <section className={`${styles.wrap} ${styles.finish}`} aria-labelledby="finish-title">
         <div className={styles.finishCard}>
           <div><h2 id="finish-title">See a repair <em>through.</em></h2>
-            <p>{demo ? 'Report damage as the tenant, schedule a visit as the manager, then switch back to confirm the fix.' : 'Start by texting your building’s repair line.'}</p></div>
-          <Link className={styles.finalLink} href="/app">{appLabel} <Arrow /></Link>
+            <p>{previewOnly ? 'Follow an example from the first photo to a confirmed repair.' : demo ? 'Report damage as the tenant, schedule a visit as the manager, then switch back to confirm the fix.' : 'Start by texting your building’s repair line.'}</p></div>
+          <a className={styles.finalLink} href={destination}>{appLabel} <Arrow /></a>
         </div>
       </section>
     </main>

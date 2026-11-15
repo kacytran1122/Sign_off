@@ -1,0 +1,68 @@
+.example {
+  padding: clamp(1rem, 4vw, 3rem);
+  border: 1px solid #373044;
+  border-radius: clamp(1.1rem, 2.7vw, 2rem);
+  background: radial-gradient(ellipse at 92% 3%, #382844 0, transparent 63%),
+    linear-gradient(140deg, #211c2d, #181824);
+}
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #493c51;
+}
+.tabs button {
+  border: 1px solid transparent;
+  border-radius: 99px;
+  padding: .54rem .87rem;
+  background: transparent;
+  color: #e0d7e4;
+  font: 600 .9rem/1.3 var(--signoff-font-sans);
+  cursor: pointer;
+}
+.tabs button:hover { background: #392d45; }
+.tabs button[aria-selected='true'] {
+  border-color: #d0a1c2;
+  background: #eed8e8;
+  color: #382136;
+}
+.panel {
+  display: grid;
+  grid-template-columns: minmax(0, .77fr) minmax(0, 1.25fr);
+  align-items: center;
+  gap: clamp(1.15rem, 4vw, 3.15rem);
+  min-height: clamp(18rem, 43vw, 34rem);
+  padding-block: clamp(1.25rem, 3vw, 2.4rem);
+}
+.panel[hidden] { display: none; }
+.panel .copy h3 {
+  font: 400 clamp(2rem, 4.8vw, 4.05rem)/1 var(--signoff-font-serif);
+  color: #fff7fb;
+  letter-spacing: -.025em;
+  text-wrap: balance;
+}
+.panel .copy p { max-width: 34ch; margin-top: .78rem; color: #ded2df; font-size: clamp(.97rem, 1.5vw, 1.12rem); }
+.capture, .photoPreview {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  border: 1px solid #92738572;
+  border-radius: .95rem;
+  box-shadow: 0 1rem 2.5rem #07070f4d;
+}
+.capture { object-fit: contain; }
+.timeline { justify-self: center; max-width: 26rem; }
+.photoPreview { justify-self: center; max-width: 26rem; overflow: hidden; background: #52334b; color: #fff4f9; }
+.tenantPhoto { aspect-ratio: 1.42; background: #dfcdb9 url('./ceiling-repair.jpg') no-repeat left 53% / 200% auto; }
+.photoPreview p { padding: .9rem 1.15rem; }
+.example .caption { color: #c4b5ca; font-size: .8rem; }
+
+@media (max-width: 680px) {
+  .panel { min-height: 0; grid-template-columns: 1fr; }
+  .tabs button { text-align: left; }
+}
+@media (max-width: 395px) {
+  .tabs button { padding-inline: .58rem; }
+}
