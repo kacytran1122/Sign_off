@@ -51,7 +51,7 @@ Tenant   @signoff Resolved L-2                confirm the repair
 
 The **chat assistant** in `backend/photon.ts` and `backend/workflow.ts` enrolls tenant and manager identities, keeps replies in the correct conversation, and advances the work order through scheduling and verification. Optional agents in `backend/agents/` can ask questions, propose changes, and prepare evidence briefs using scoped tools.
 
-The **building evidence** layer verifies that the CoStar record, Matterport room and views, and Vexcel imagery all belong to the same property before it offers a roof inspection target. The **neighborhood evidence** layer uses city service records, OpenStreetMap, and Open-Meteo. TimescaleDB stores the underlying heat observations.
+The **building evidence** layer verifies that the CoStar record, Matterport room and views, and Vexcel imagery all belong to the same property before it offers a roof inspection target. The **neighborhood evidence** layer uses city service records, an Esri World Imagery satellite map, and Open-Meteo. TimescaleDB stores the underlying heat observations.
 
 The **repair workspace** displays the original incident photo, work-order history, and building evidence. A separate public HTTPS host serves individual **repair reports** from private R2 snapshots. Reports are accessed through the link sent with the work order. The signed publisher filters the report data before storing the snapshot.
 
@@ -65,7 +65,7 @@ Signoff matches a property to its configured CoStar record. When available, Matt
 
 ## Verified run (hosted repair report)
 
-Work order L-2 exercised a matched ceiling leak from the operating property record through a hosted report. The report showed the matched room evidence, current and seasonal outdoor heat context, an OpenStreetMap neighborhood view, Houston 311 coverage, and a wordless Blender render. The hosted page loaded at mobile and desktop widths.
+Work order L-2 exercised a matched ceiling leak from the operating property record through a hosted report. The report showed the matched room evidence, current and seasonal outdoor heat context, a satellite neighborhood view, Houston 311 coverage, and a wordless Blender render. The hosted page loaded at mobile and desktop widths.
 
 ## Data behind the report
 

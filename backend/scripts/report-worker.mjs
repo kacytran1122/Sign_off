@@ -323,10 +323,7 @@ function heatContent(area) {
 
 function neighborhood(area) {
   const mapped = Number.isFinite(area?.longitude) && Number.isFinite(area?.latitude);
-  const bbox = mapped ? [
-    Math.max(-180, area.longitude - .012), Math.max(-85, area.latitude - .008),
-    Math.min(180, area.longitude + .012), Math.min(85, area.latitude + .008),
-  ].map((number) => number.toFixed(3)).join(',') : '';
+  const center = mapped ? encodeURIComponent(`${area.longitude.toFixed(3)},${area.latitude.toFixed(3)}`) : '';
   const coverage = area?.coverage;
   const source = { 'LOS ANGELES': 'https://data.lacity.org/d/2cy6-i7zn', HOUSTON: 'https://my311.houstontx.gov/servicerequestdata.html' }[area?.city?.toUpperCase()];
   const records = source ? `<a href="${source}" rel="noreferrer">city 311 reports</a>` : 'city 311 reports';
@@ -343,8 +340,8 @@ function neighborhood(area) {
         ${coverage?.indicators.rodentMentions !== undefined ? '<p class="muted">Rodent mentions are Houston 311 requests in the same area and dates that mention mice or rats.</p>' : ''}
         <p class="muted">An on-site check can establish whether mice or rats are present. Tell maintenance if you see rodents, droppings, or gnaw marks.</p>
       </section>
-      <section class="card"><h3>Approximate neighborhood</h3>
-        ${bbox ? `<iframe title="OpenStreetMap neighborhood map" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin" src="https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(bbox)}&amp;layer=mapnik"></iframe><p class="muted attribution"><a href="https://www.openstreetmap.org/copyright" rel="noreferrer">© OpenStreetMap contributors</a></p>` : '<p class="muted">Neighborhood map unavailable.</p>'}
+      <section class="card"><h3>Neighborhood satellite view</h3>
+        ${center ? `<iframe title="Neighborhood satellite map" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin" src="https://www.arcgis.com/apps/Embed/index.html?webmap=86265e5a4bbb4187a59719cf134e0018&amp;center=${center}&amp;level=18&amp;scale=true&amp;zoom=true&amp;disable_scroll=true"></iframe><p class="muted attribution">Approximate location · <a href="https://www.arcgis.com/home/item.html?id=86265e5a4bbb4187a59719cf134e0018" rel="noreferrer">Esri World Imagery</a></p>` : '<p class="muted">Neighborhood map unavailable.</p>'}
       </section>
     </div>
   </section>`;
@@ -454,7 +451,7 @@ function reportHtml(report, uuid) {
         </section>
         <figure class="card model-card">
           ${report.renderStatus === 'ready' ? `<img src="/api/reports/${uuid}/render" alt="3D model: ${model}">` : `<p class="model-pending muted">${report.renderStatus === 'queued' ? 'The 3D model is being prepared. Refresh this page for an update.' : 'A 3D model is unavailable.'}</p>`}
-          <figcaption><strong>3D reference model</strong><p>${model}.</p><p class="muted">Generated from the reported scenario to explain the precaution.</p></figcaption>
+          <figcaption><strong>3D reference model</strong><p>${model}.</p></figcaption>
         </figure>
       </div>
       ${buildingContent(report.building, report)}${neighborhood(report.area)}
@@ -497,7 +494,7 @@ export default {
     const { renderPng, ...metadata } = report;
     if (api) return response(JSON.stringify(metadata), 200, 'application/json; charset=utf-8');
     const page = response(reportHtml(metadata, uuid), 200, 'text/html; charset=utf-8');
-    page.headers.set('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; frame-src https://www.openstreetmap.org; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+    page.headers.set('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; frame-src https://www.arcgis.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
     return page;
   },
 };

@@ -17,14 +17,20 @@ test('a missing report link shows the app’s unavailable state', async ({ page 
 
 test('a tenant report moves from generating to a visible guide without a reload', async ({ page }) => {
   let ready = false;
+  await page.route('https://www.arcgis.com/apps/Embed/**', (route) => route.fulfill({ body: '' }));
   await page.route(`**${tenantApi}`, (route) => route.fulfill({ json: {
     id: '21', status: 'open', issue: 'damage', guidance: 'Keep the landing clear.',
     effects: 'A broken step increases fall risk.', renderStatus: ready ? 'ready' : 'queued',
+    area: { city: 'Los Angeles', latitude: 34.1234567, longitude: -118.2345678 },
   } }));
   await page.route(`**${tenantApi}/render`, (route) => route.fulfill({ contentType: 'image/png', body: photo }));
   await page.goto(`/reports/${key}`);
 
   await expect(page.getByRole('heading', { name: 'Building damage' })).toBeVisible();
+  const map = page.locator('iframe[title="Neighborhood satellite map"]');
+  await expect(map).toHaveAttribute('referrerpolicy', 'no-referrer');
+  await expect(map).toHaveAttribute('src', /arcgis\.com\/apps\/Embed\/index\.html\?.*&center=-118\.235%2C34\.123&level=18&/);
+  await expect(page.getByRole('link', { name: 'Esri World Imagery' })).toBeVisible();
   await expect(page.getByText('Generating the 3D diagram…')).toBeVisible();
   const guide = page.getByRole('img', { name: /^3D guide/ });
   await expect(guide).toHaveCount(0);

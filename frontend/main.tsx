@@ -365,14 +365,16 @@ function dateTime(value: string, zone: string) {
   return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short', timeZone: zone }).format(new Date(value));
 }
 function Neighborhood({ area }: { area: Area | null | undefined }) {
-  const canMap = area?.latitude !== undefined && area.longitude !== undefined;
-  const map = canMap ? `${area.longitude! - .012},${area.latitude! - .008},${area.longitude! + .012},${area.latitude! + .008}` : '';
+  const { latitude, longitude } = area ?? {};
+  const center = typeof longitude === 'number' && typeof latitude === 'number' && Number.isFinite(longitude) && Number.isFinite(latitude)
+    ? encodeURIComponent(`${longitude.toFixed(3)},${latitude.toFixed(3)}`) : '';
   const weather = area?.weather;
   return <section className="panel evidence neighborhood">
     <div className="panel-head"><div><h2>Neighborhood conditions</h2><p>{area?.city || 'Location and outdoor conditions'}</p></div></div>
-    {map && <div><iframe className="area-map" title="OpenStreetMap neighborhood map" loading="lazy" referrerPolicy="origin"
-      src={`https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(map)}&layer=mapnik`} />
-      <p className="caption"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a></p></div>}
+    {center && <div><iframe className="area-map" title="Neighborhood satellite map" loading="lazy" referrerPolicy="no-referrer"
+      sandbox="allow-scripts allow-same-origin"
+      src={`https://www.arcgis.com/apps/Embed/index.html?webmap=86265e5a4bbb4187a59719cf134e0018&center=${center}&level=18&scale=true&zoom=true&disable_scroll=true`} />
+      <p className="caption">Approximate location · <a href="https://www.arcgis.com/home/item.html?id=86265e5a4bbb4187a59719cf134e0018" target="_blank" rel="noreferrer">Esri World Imagery</a></p></div>}
     {!area ? <p className="caption" role="status">Looking up the address and neighborhood data…</p> : area.error && <p className="caption">{area.error}</p>}
     {area && !area.error && <div className="area-stats">
       <div><h3>Outdoor heat and humidity</h3>

@@ -99,11 +99,13 @@ test('the report presents building and neighborhood evidence and serves the Blen
   const page = await request(`/reports/${id}`);
   assert.equal(page.status, 200);
   expectPrivate(page);
-  assert.match(page.headers.get('Content-Security-Policy') ?? '', /frame-src https:\/\/www\.openstreetmap\.org/);
+  assert.match(page.headers.get('Content-Security-Policy') ?? '', /frame-src https:\/\/www\.arcgis\.com;/);
   const html = await page.text();
-  for (const fragment of ['Water leak', 'Work order L-2', 'OpenStreetMap contributors', 'Forecast feels-like highs', '78°F', 'Seasonal model estimate 81°F', 'TimescaleDB', 'city 311 reports', 'whether mice or rats are present', 'Building record provided by CoStar', 'Conference room', 'Matched Matterport interior', 'Matched Vexcel aerial imagery', '&lt;script&gt;']) {
+  for (const fragment of ['Water leak', 'Work order L-2', 'Neighborhood satellite view', 'Esri World Imagery', 'Forecast feels-like highs', '78°F', 'Seasonal model estimate 81°F', 'TimescaleDB', 'city 311 reports', 'whether mice or rats are present', 'Building record provided by CoStar', 'Conference room', 'Matched Matterport interior', 'Matched Vexcel aerial imagery', '&lt;script&gt;']) {
     assert(html.includes(fragment), fragment);
   }
+  assert.match(html, /<iframe title="Neighborhood satellite map"[^>]+referrerpolicy="no-referrer"[^>]+src="https:\/\/www\.arcgis\.com\/apps\/Embed\/index\.html\?webmap=86265e5a4bbb4187a59719cf134e0018&amp;center=-117\.765%2C34\.123&amp;level=18/);
+  assert.doesNotMatch(html, /OpenStreetMap|explain the precaution|separate records/);
   assert.match(html, /aria-labelledby="observed-title observed-description"/);
   assert.match(html, /aria-labelledby="forecast-title forecast-description"/);
   // The duplicate or missing measurement must never be replaced by an invented value or line.
