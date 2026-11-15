@@ -3,7 +3,7 @@ import type { Pool, PoolClient } from 'pg';
 import { z } from 'zod';
 import type { Config } from './config.js';
 import { confirmedDamageAnchor } from './damage-point.js';
-import { guidance, repairEffects, type Aid, type Issue } from './repair.js';
+import { belongsToProperty, guidance, repairEffects, type Aid, type Issue } from './repair.js';
 import { repairScenario } from './repair-scenario.js';
 import { assessRepairInspection } from './inspection.js';
 
@@ -44,7 +44,7 @@ const reportArea = z.object({
 
 type ReportRow = {
   id: string; status: string; issue: Issue; aid: Aid; area: unknown; property_match: boolean;
-  landmarkId?: string; description?: string; damagePoint?: unknown; renderStatus?: string; image?: Buffer;
+  address?: string; landmarkId?: string; description?: string; damagePoint?: unknown; renderStatus?: string; image?: Buffer;
   linkedDamagePoints?: { description: string; point: unknown }[] | null;
 };
 
@@ -59,7 +59,14 @@ LEFT JOIN LATERAL (
     AND damage_point->'confirmed'='true'::jsonb AND damage_point->>'modelId'=$3
 ) linked ON true`;
 
-export function reportSnapshot(property: Config['property'], row: ReportRow) {
+export function reportSnapshot(
+  property: Config['property'], row: ReportRow, scans: Config['reportMatterportScans'] = [],
+) {
+  const address = row.address;
+  const matchingScans = !row.property_match && address
+    ? scans.filter((scan) => belongsToProperty(address, scan.address))
+    : [];
+  const reportScan = matchingScans.length === 1 ? matchingScans[0] : undefined;
   const point = property.landmarks.find((landmark) => landmark.id === row.landmarkId);
   const scenario = repairScenario(row.issue, row.aid, row.description, row.property_match ? point?.label : undefined);
   let confirmedAnchor;
@@ -78,7 +85,7 @@ export function reportSnapshot(property: Config['property'], row: ReportRow) {
   const area = reportArea.safeParse(row.area).data;
   if (area?.latitude !== undefined) area.latitude = Number(area.latitude.toFixed(3));
   if (area?.longitude !== undefined) area.longitude = Number(area.longitude.toFixed(3));
-  const building = row.property_match && property.costar ? {
+  const propertyEvidence = row.property_match && property.costar ? {
     ...property.costar,
     roomLabel: point?.label,
     roomEvidence: point?.roomEvidence,
@@ -90,16 +97,22 @@ export function reportSnapshot(property: Config['property'], row: ReportRow) {
     roofEvidence: property.roof.attributes.slice(0, 6).map(({ label, value }) => `${label} · ${value}`),
     inspectionSteps: plan?.steps,
   } : undefined;
+  const building = reportScan ? {
+    ...propertyEvidence, hasMatterport: true, publicMatterportModel: reportScan.modelId, hasVexcel: false,
+  } : propertyEvidence;
+  const assessment = reportScan ? {
+    ...inspectionAssessment, reason: 'A Matterport scan matches the address. Have maintenance locate the damage on site.',
+  } : inspectionAssessment;
   return {
     id: row.id, status: row.status, issue: row.issue, aid: row.aid, scenario, guidance: guidance[row.aid],
-    effects: repairEffects(row.issue, row.aid), area, building, inspectionAssessment, renderStatus: row.renderStatus,
+    effects: repairEffects(row.issue, row.aid), area, building, inspectionAssessment: assessment, renderStatus: row.renderStatus,
   };
 }
 
 export function startReportPublisher(db: Pool, config: Config) {
   if (!config.reportPublish) return;
   const { origin, token } = config.reportPublish;
-  const evidenceVersion = createHash('sha256').update('report-v8:').update(JSON.stringify(config.property)).digest('hex');
+  const evidenceVersion = createHash('sha256').update('report-v9:').update(JSON.stringify([config.property, config.reportMatterportScans])).digest('hex');
   let active: Promise<void> | undefined;
 
   async function publish() {
@@ -119,7 +132,7 @@ export function startReportPublisher(db: Pool, config: Config) {
 
   async function publishNext(client: PoolClient) {
     const { rows: [row] } = await client.query<ReportRow & { key: string; revision: string }>(`
-      SELECT w.id,w.access_key AS key,w.status,r.issue,r.aid,r.area,r.property_match,
+      SELECT w.id,w.access_key AS key,w.status,r.issue,r.aid,r.area,r.address,r.property_match,
         photo.landmark_id AS "landmarkId",photo.description,photo.damage_point AS "damagePoint",
         linked.damage_points AS "linkedDamagePoints",b.status AS "renderStatus",b.image,
         source.revision
@@ -128,7 +141,7 @@ export function startReportPublisher(db: Pool, config: Config) {
       LEFT JOIN report_publications p ON p.order_id=w.id
       ${reportObservationJoins}
       CROSS JOIN LATERAL (SELECT jsonb_build_array($2::text,w.status,r.updated_at,b.status,b.completed_at,b.attempts,r.issue,r.aid,
-        md5(photo.description),md5(photo.damage_point::text),md5(linked.damage_points::text))::text AS revision) source
+        md5(r.address),md5(photo.description),md5(photo.damage_point::text),md5(linked.damage_points::text))::text AS revision) source
       WHERE w.property_id=$1 AND p.revision IS DISTINCT FROM source.revision
         AND (p.retry_after IS NULL OR p.retry_after<=now())
       ORDER BY w.created_at DESC LIMIT 1`, [config.property.id, evidenceVersion, config.property.matterportModel ?? null]);
@@ -138,7 +151,7 @@ export function startReportPublisher(db: Pool, config: Config) {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...reportSnapshot(config.property, row),
+          ...reportSnapshot(config.property, row, config.reportMatterportScans),
           renderPng: row.renderStatus === 'ready' ? row.image?.toString('base64') : undefined,
         }),
         signal: AbortSignal.timeout(8000),

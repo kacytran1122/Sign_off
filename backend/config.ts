@@ -82,6 +82,10 @@ export type Property = z.infer<typeof propertySchema>;
 export type Landmark = Property['landmarks'][number];
 export type Role = 'tenant' | 'manager';
 export type Participant = { role: Role; suite?: string };
+const reportMatterportScan = z.object({
+  address: z.string().trim().regex(/^\d+\s+\S/, 'Use a single verified street address'),
+  modelId: z.string().regex(/^[A-Za-z0-9]{1,64}$/),
+});
 
 export function normalizeHandle(handle: string) {
   return handle.trim().toLowerCase();
@@ -157,6 +161,9 @@ export async function loadConfig(env = process.env) {
   }
   const httpsOrigin = z.url({ protocol: /^https$/ }).transform((url) => new URL(url).origin);
   const reportShareOrigin = httpsOrigin.optional().parse(env.REPORT_SHARE_ORIGIN || undefined);
+  const reportMatterportScans = env.REPORT_MATTERPORT_SCANS_JSON
+    ? z.array(reportMatterportScan).parse(JSON.parse(env.REPORT_MATTERPORT_SCANS_JSON))
+    : [];
   if (env.REPORT_PUBLISH_TOKEN && !reportShareOrigin) throw new Error('Report publishing requires REPORT_SHARE_ORIGIN');
   const reportPublish = env.REPORT_PUBLISH_TOKEN
     ? {
@@ -176,7 +183,7 @@ export async function loadConfig(env = process.env) {
     blenderRenderer: env.BLENDER_RENDERER,
     repairContext: env.REPAIR_CONTEXT === 'true',
     agentMode,
-    reportShareOrigin, reportPublish,
+    reportShareOrigin, reportPublish, reportMatterportScans,
     tigerDatabaseUrl: env.TIGER_DATABASE_URL || undefined,
     nudgeSeconds: z.coerce.number().int().positive().parse(env.NUDGE_SECONDS ?? (demo ? 120 : 3600)),
   };

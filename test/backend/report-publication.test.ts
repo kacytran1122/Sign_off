@@ -146,3 +146,33 @@ test('a photo-matched inspection point changes the shared plan without exposing 
   assert.match(upstairs.inspectionAssessment.nextStep, /Keep people clear/);
   assert.equal(upstairs.building?.inspectionSteps, undefined);
 });
+
+test('a public report scan is selected only for its matching street address', async () => {
+  const scans = [
+    { address: '1200 Example Rd, Los Angeles, CA 90012', modelId: 'ApprovedLAModel' },
+  ];
+  const config = await loadConfig({
+    DEMO_MODE: 'true', DATABASE_URL: 'test-database-url', REPORT_MATTERPORT_SCANS_JSON: JSON.stringify(scans),
+  });
+  const row = {
+    id: '18', status: 'open', issue: 'leak' as const, aid: 'bucket' as const, property_match: false,
+    address: '1200 Example Road, Los Angeles, CA', area: { city: 'LOS ANGELES' },
+  };
+  const report = reportSnapshot(config.property, row, config.reportMatterportScans);
+  assert.equal(report.building?.publicMatterportModel, 'ApprovedLAModel');
+  assert.equal(report.building?.hasMatterport, true);
+  assert.equal(report.building?.hasVexcel, false);
+  assert.equal(report.building?.storiesAboveGrade, undefined);
+  assert.equal(report.inspectionAssessment.decision, 'indoor-check');
+  assert.match(report.inspectionAssessment.reason, /scan matches the address/);
+  assert.doesNotMatch(JSON.stringify(report), /1200 Example/);
+  for (const address of ['1202 Example Rd, Los Angeles, CA', '1200 Example Rd, Houston, TX', '1200 Example Rd, Los Angeles, CA 91364']) {
+    assert.equal(reportSnapshot(config.property, { ...row, address }, scans).building, undefined);
+  }
+  assert.equal(reportSnapshot(config.property, row, [...scans, { ...scans[0], modelId: 'ConflictingModel' }]).building, undefined);
+  assert.equal(reportSnapshot(config.property, { ...row, address: undefined }, scans).building, undefined);
+  await assert.rejects(loadConfig({
+    DEMO_MODE: 'true', DATABASE_URL: 'test-database-url',
+    REPORT_MATTERPORT_SCANS_JSON: JSON.stringify([{ ...scans[0], modelId: 'https://example.invalid' }]),
+  }));
+});

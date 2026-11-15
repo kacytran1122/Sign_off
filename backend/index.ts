@@ -199,14 +199,14 @@ app.get('/api/reports/:key', async (c) => {
   const key = keySchema.safeParse(c.req.param('key'));
   if (!key.success) return c.notFound();
   const { rows: [report] } = await db.query<Parameters<typeof reportSnapshot>[1]>(`
-    SELECT w.id,w.status,r.issue,r.aid,r.area,r.property_match,b.status AS "renderStatus",
+    SELECT w.id,w.status,r.issue,r.aid,r.area,r.address,r.property_match,b.status AS "renderStatus",
       photo.landmark_id AS "landmarkId",photo.description,photo.damage_point AS "damagePoint",linked.damage_points AS "linkedDamagePoints"
     FROM work_orders w JOIN repair_contexts r ON w.id=r.order_id LEFT JOIN blender_renders b ON w.id=b.order_id
     ${reportObservationJoins}
     WHERE w.access_key=$1 AND w.property_id=$2`, [key.data, cfg.property.id, cfg.property.matterportModel ?? null]);
   if (!report) return c.notFound();
   c.header('Cache-Control', 'private, no-store');
-  return c.json(reportSnapshot(cfg.property, report));
+  return c.json(reportSnapshot(cfg.property, report, cfg.reportMatterportScans));
 });
 app.get('/api/reports/:key/render', async (c) => {
   const key = keySchema.safeParse(c.req.param('key'));

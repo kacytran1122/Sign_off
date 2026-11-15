@@ -37,7 +37,7 @@ type Ticket = {
   timeline: { action: string; detail: string; created_at: string }[];
 };
 type BuildingEvidence = {
-  storiesAboveGrade: number; buildingType?: string; propertySubtype?: string; buildingAreaSqFt?: number; yearBuilt?: number;
+  storiesAboveGrade?: number; buildingType?: string; propertySubtype?: string; buildingAreaSqFt?: number; yearBuilt?: number;
   roomLabel?: string; roomEvidence?: { areaSqFt?: number; widthFt?: number; depthFt?: number; heightFt?: number };
   matchedRooms?: number; matchedViewpoints?: number; hasMatterport?: boolean; hasVexcel?: boolean;
   publicMatterportModel?: string;
@@ -672,10 +672,10 @@ export function SharedReport({ access }: { access: string }) {
       <iframe className="showcase" src={propertyView} title="Matterport 3D property scan" loading="lazy" referrerPolicy="no-referrer" allow="fullscreen" />
     </section>}
     <section className="panel evidence">
-      <div className="panel-head"><h2>CoStar Group building evidence</h2></div>
+      <div className="panel-head"><h2>{building?.storiesAboveGrade ? 'CoStar Group building evidence' : 'Building evidence'}</h2></div>
       {building ? <dl className="attributes">
         {building.buildingType && <div><dt>Property type</dt><dd>{building.propertySubtype ?? building.buildingType}</dd></div>}
-        <div><dt>Above-grade floors</dt><dd>{building.storiesAboveGrade}</dd></div>
+        {building.storiesAboveGrade && <div><dt>Above-grade floors</dt><dd>{building.storiesAboveGrade}</dd></div>}
         {building.buildingAreaSqFt && <div><dt>Building area</dt><dd>{building.buildingAreaSqFt.toLocaleString('en-US')} sq ft</dd></div>}
         {building.yearBuilt && <div><dt>Year built</dt><dd>{building.yearBuilt}</dd></div>}
         {building.hasMatterport && <div><dt>Matterport</dt><dd>{building.roomLabel ?? 'Verified building model'}{building.roomEvidence?.areaSqFt && ` · ${building.roomEvidence.areaSqFt.toLocaleString('en-US')} sq ft measured`}</dd></div>}
