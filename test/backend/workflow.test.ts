@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,6 +8,7 @@ import { once } from 'node:events';
 import { test } from 'node:test';
 import EmbeddedPostgres from 'embedded-postgres';
 import { DateTime } from 'luxon';
+import { loadConfig } from '../../backend/config.js';
 import { parseVisit } from '../../backend/schedule.js';
 import { Webhook } from 'standardwebhooks';
 import { readMessage, sendText, verifyEvent } from '../../backend/photon.js';
@@ -23,6 +24,33 @@ async function port() {
   await new Promise<void>((resolve) => listener.close(() => resolve()));
   return address.port;
 }
+
+test('the sponsor rehearsal accepts roof imagery in the backend folder', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'signoff-config-'));
+  const path = join(dir, 'property.json');
+  const property = JSON.parse(await readFile('backend/config/property.example.json', 'utf8'));
+  const imageFile = 'backend/config/roof-assets/test.jpg';
+  const env = {
+    PHOTON_TEST_MODE: 'true',
+    PHOTON_SPONSOR_REHEARSAL: 'true',
+    PHOTON_POLL_SINCE: '2026-11-14T13:00:00Z',
+    PROPERTY_CONFIG: path,
+    MANAGER_HANDLE: 'manager@example.invalid',
+    TENANT_SUITES_JSON: '{"tenant@example.invalid":"402"}',
+    DATABASE_URL: 'postgres://fixture@localhost/signoff',
+    PHOTON_PROJECT_ID: 'pho_prj_fixture',
+    PHOTON_API_KEY: 'fixture-photon-key',
+    MATTERPORT_SDK_KEY: 'fixture-matterport-key',
+  };
+  try {
+    await writeFile(path, JSON.stringify({ ...property, roof: { imageFile } }));
+    assert.equal((await loadConfig(env)).property.roof.imageFile, imageFile);
+    await writeFile(path, JSON.stringify({ ...property, roof: { imageFile: 'backend/config/roof-assets/../other.jpg' } }));
+    await assert.rejects(loadConfig(env), /imageFile/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
 test('Photon Beta direct media and caption normalize into one intake message', () => {
   const object = {

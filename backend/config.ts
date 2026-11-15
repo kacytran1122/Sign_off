@@ -19,7 +19,7 @@ const propertySchema = z.object({
   matterportModel: z.string().regex(/^[a-zA-Z0-9]+$/).optional(),
   roof: z.object({
     imageUrl: z.url({ protocol: /^https$/ }).optional(),
-    imageFile: z.string().regex(/^config\/roof-assets\/[A-Za-z0-9_-]+\.jpg$/).optional(),
+    imageFile: z.string().regex(/^backend\/config\/roof-assets\/[A-Za-z0-9_-]+\.jpg$/).optional(),
     captureDate: z.string().optional(),
     attributes: z.array(z.object({
       label: z.string(),
@@ -61,8 +61,7 @@ export function normalizeHandle(handle: string) {
   return handle.trim().toLowerCase();
 }
 
-export async function loadConfig() {
-  const env = process.env;
+export async function loadConfig(env = process.env) {
   const demo = env.DEMO_MODE === 'true';
   const photonTest = env.PHOTON_TEST_MODE === 'true';
   const sponsorRehearsal = env.PHOTON_SPONSOR_REHEARSAL === 'true';
