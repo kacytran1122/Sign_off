@@ -52,7 +52,7 @@ export async function record(db: PoolClient, id: string, action: string, detail:
 export async function remindManager(db: PoolClient, cfg: Config, order: { id: string; access_key: string }, lead?: string) {
   await record(db, order.id, 'reminder', 'Sent the manager a reminder to schedule the inspection.');
   const link = await managerWorkOrderLink(db, cfg, order);
-  await notify(db, cfg.manager, [lead ?? `Reminder: ${code(order.id)} is waiting for an inspection window.`, link].filter(Boolean).join("\n"));
+  await notify(db, cfg.manager, [lead ?? `Reminder: ${code(order.id)} is waiting for an inspection window.`, link].filter(Boolean).join(' '));
 }
 
 const confirmReply = /^(yes|confirm)(?:\s+L-\d+)?[.!]?$/i;
