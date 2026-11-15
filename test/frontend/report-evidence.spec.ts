@@ -10,7 +10,7 @@ const workOrderApi = `/api/work-orders/${key}`;
 
 test('a missing report link shows the app’s unavailable state', async ({ page }) => {
   await page.goto('/reports/invalid-key');
-  await expect(page).toHaveTitle('Signoff');
+  await expect(page).toHaveTitle('Repair report | Signoff');
   await expect(page.getByRole('status')).toHaveText('This page is unavailable.');
   await expect(page.getByRole('heading', { name: 'Temporary protection' })).toHaveCount(0);
 });

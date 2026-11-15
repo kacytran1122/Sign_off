@@ -13,7 +13,7 @@ test('the composer rejects an oversized photo before submitting', async ({ page 
     }
     return route.fallback();
   });
-  await page.goto('/');
+  await page.goto('/app');
   const attach = page.getByLabel('Attach a photo');
   await attach.setInputFiles({ name: 'large.png', mimeType: 'image/png', buffer: Buffer.alloc(4 * 1024 * 1024 + 1) });
 
@@ -30,7 +30,7 @@ test('a failed submission preserves the message and allows a retry', async ({ pa
     submissions.push(route.request().postDataJSON());
     return route.fulfill({ status: submissions.length === 1 ? 503 : 202 });
   });
-  await page.goto('/');
+  await page.goto('/app');
   const message = page.getByRole('textbox', { name: 'Message' });
   const send = page.getByRole('button', { name: 'Send', exact: true });
   const body = 'The reception window is dripping';
@@ -53,7 +53,7 @@ test('changing roles clears the text draft and sends under the selected identity
   await page.route('**/api/demo', (route) =>
     route.request().method() === 'POST' ? route.fulfill({ status: 202 }) : route.fallback(),
   );
-  await page.goto('/');
+  await page.goto('/app');
   const message = page.getByRole('textbox', { name: 'Message' });
   await message.fill('Unsent tenant draft');
   const manager = page.getByRole('button', { name: 'Manager', exact: true });

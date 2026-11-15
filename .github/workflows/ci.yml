@@ -36,7 +36,7 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           git archive --format=tar HEAD > "$RUNNER_TEMP/signoff.tar"
-          tar -rf "$RUNNER_TEMP/signoff.tar" build/backend dist
+          tar --exclude=frontend/.next/cache -rf "$RUNNER_TEMP/signoff.tar" build/backend frontend/.next
           gzip "$RUNNER_TEMP/signoff.tar"
       - uses: actions/upload-artifact@v7
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

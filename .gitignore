@@ -1,5 +1,7 @@
 node_modules
 .next
+frontend/next-env.d.ts
+*.tsbuildinfo
 .vercel
 dist
 .env

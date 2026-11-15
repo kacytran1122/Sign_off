@@ -6,8 +6,8 @@ const photo = Buffer.from(
 );
 
 test('a tenant photo opens a work order that can be scheduled and reopened', async ({ page }) => {
-  await page.goto('/');
-  await expect(page).toHaveTitle('Signoff');
+  await page.goto('/app');
+  await expect(page).toHaveTitle('Repair workspace | Signoff');
   await expect(page.getByRole('heading', { name: 'From report to repair.' })).toBeVisible();
   const send = page.getByRole('button', { name: 'Send', exact: true });
   await expect(send).toBeDisabled();
@@ -26,7 +26,7 @@ test('a tenant photo opens a work order that can be scheduled and reopened', asy
   await expect(submittedPhoto).toBeVisible();
   await expect.poll(() => submittedPhoto.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1);
 
-  await page.goto('/');
+  await page.goto('/app');
   await page.getByRole('button', { name: 'Manager', exact: true }).click();
   await message.fill('Tomorrow 2 to 4 PM');
   await send.click();
@@ -38,7 +38,7 @@ test('a tenant photo opens a work order that can be scheduled and reopened', asy
   await page.goto(orderPath!);
   await expect(page.getByText('Scheduled', { exact: true })).toBeVisible();
 
-  await page.goto('/');
+  await page.goto('/app');
   await page.getByRole('button', { name: 'Manager', exact: true }).click();
   await message.fill('FIXED');
   await send.click();
@@ -64,8 +64,9 @@ test('tenant report links open directly and display the 3D guide', async ({ page
   await page.route(`**/api/reports/${key}/render`, async (route) => {
     await route.fulfill({ contentType: 'image/png', body: photo });
   });
-  await page.goto(`/reports/${key}`);
-  await expect(page).toHaveTitle('Signoff');
+  const reportPage = await page.goto(`/reports/${key}`);
+  expect(await reportPage?.headerValue('referrer-policy')).toBe('no-referrer');
+  await expect(page).toHaveTitle('Repair report | Signoff');
   await expect(page.getByRole('heading', { name: 'Water leak' })).toBeVisible();
   await expect(page.getByText('Set a bucket below the drip.')).toBeVisible();
   await expect(page.getByRole('img', { name: '3D guide showing temporary protection and what maintenance should repair' })).toBeVisible();

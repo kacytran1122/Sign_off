@@ -1,8 +1,9 @@
 import { readFile } from 'node:fs/promises';
-import { serve } from '@hono/node-server';
-import { serveStatic } from '@hono/node-server/serve-static';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
+import { getRequestListener } from '@hono/node-server';
 import { Hono } from 'hono';
-import { loadShell } from './shell.js';
 import pg from 'pg';
 import { Webhook } from 'standardwebhooks';
 import { z } from 'zod';
@@ -17,7 +18,17 @@ import { downloadPhoto, listReceivedMessages, photoLimit, readMessage, Retryable
 import { handleMessage, notify, prepareReport, record } from './workflow.js';
 
 const cfg = await loadConfig();
-const shell = await loadShell();
+const hostname = cfg.demo || cfg.photonTest ? '127.0.0.1' : '0.0.0.0';
+// Keep Next's CommonJS export and global environment typings isolated from the backend.
+const next = createRequire(import.meta.url)('next') as (
+  options: { dev: boolean; dir: string; hostname: string; port: number },
+) => {
+  prepare(): Promise<void>;
+  getRequestHandler(): (request: IncomingMessage, response: ServerResponse) => Promise<void>;
+  close(): Promise<void>;
+};
+const frontend = next({ dev: false, dir: resolve('frontend'), hostname, port: cfg.port });
+await frontend.prepare();
 const roofImage = cfg.property.roof.imageFile ? await readFile(cfg.property.roof.imageFile) : undefined;
 const db = new pg.Pool({ connectionString: cfg.databaseUrl, max: 6 });
 await db.query(await readFile('backend/db/schema.sql', 'utf8'));
@@ -26,10 +37,6 @@ const stopArea = cfg.repairContext && startAreaWorker(db, cfg);
 
 const app = new Hono();
 const verifier = cfg.webhookSecret ? new Webhook(cfg.webhookSecret) : undefined;
-app.use('*', async (c, next) => {
-  c.header('Referrer-Policy', 'no-referrer');
-  await next();
-});
 const eventTypes = new Set(['message.received', 'message.delivered', 'message.failed']);
 
 async function enqueue(id: string, type: string, object: unknown, project = cfg.photonProject) {
@@ -227,11 +234,6 @@ if (cfg.demo) {
   });
 }
 
-app.use('/assets/*', serveStatic({ root: './dist' }));
-for (const path of ['/', '/work-orders/:key', '/reports/:key']) {
-  app.get(path, (c) => c.html(shell));
-}
-
 const inboxes = [cfg, ...(cfg.managerPhoton ? [cfg.managerPhoton] : [])]
   .map((connection) => ({ connection, since: cfg.photonPollSince }));
 let nextPoll = 0;
@@ -366,7 +368,23 @@ function loop() {
     .finally(() => { if (running) wake = setTimeout(loop, 400); });
 }
 loop();
-const server = serve({ fetch: app.fetch, port: cfg.port, hostname: cfg.demo || cfg.photonTest ? '127.0.0.1' : '0.0.0.0' }, () =>
+const handleApi = getRequestListener(app.fetch, { overrideGlobalObjects: false });
+const handlePage = frontend.getRequestHandler();
+const server = createServer((request, response) => {
+  const path = request.url?.split('?', 1)[0] ?? '/';
+  response.setHeader('Referrer-Policy', 'no-referrer');
+  const api = path === '/healthz' || path === '/api' || path.startsWith('/api/') ||
+    path === '/webhooks' || path.startsWith('/webhooks/');
+  const handle = api ? handleApi : handlePage;
+  void handle(request, response).catch((error: unknown) => {
+    console.error('HTTP request failed:', error instanceof Error ? error.name : 'UnknownError');
+    if (response.headersSent) response.destroy();
+    else {
+      response.statusCode = 500;
+      response.end('Internal Server Error');
+    }
+  });
+}).listen(cfg.port, hostname, () =>
   console.log(`Signoff · ${cfg.baseUrl} · ${cfg.demo ? 'local demo' : cfg.photonTest ? 'Photon test' : 'live'}`),
 );
 async function stop() {
@@ -377,6 +395,7 @@ async function stop() {
   if (stopBlender) await stopBlender();
   if (stopArea) await stopArea();
   await db.end();
+  await frontend.close();
 }
 process.once('SIGINT', stop);
 process.once('SIGTERM', stop);

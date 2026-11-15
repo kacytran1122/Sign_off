@@ -1,9 +1,8 @@
-import 'vite/modulepreload-polyfill';
+'use client';
+
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent, MouseEvent } from 'react';
-import { createRoot } from 'react-dom/client';
 import type { Showcase } from '@matterport/sdk';
-import './style.css';
 
 type Vector = { x: number; y: number; z: number };
 type DamagePlacement = { anchor: Vector; stem: Vector; sweep?: string };
@@ -53,13 +52,14 @@ const actions: Record<string, string> = {
   closed: 'Work order closed', tenant_confirmed: 'Tenant confirmed', photo_added: 'Photo added', damage_point_confirmed: 'Damage spot confirmed',
 };
 
-function usePoll<T>(url: string) {
+function usePoll<T>(url?: string) {
   const [data, setData] = useState<T>();
   const [error, setError] = useState('');
   useEffect(() => {
+    if (!url) return;
     const controller = new AbortController();
     let fetching = false;
-    async function refresh() {
+    const refresh = async () => {
       if (fetching) return;
       fetching = true;
       try {
@@ -73,7 +73,7 @@ function usePoll<T>(url: string) {
       } finally {
         fetching = false;
       }
-    }
+    };
     void refresh();
     const timer = setInterval(refresh, 1500);
     return () => { controller.abort(); clearInterval(timer); };
@@ -83,8 +83,8 @@ function usePoll<T>(url: string) {
 
 function Header({ demo }: { demo?: boolean }) {
   return <header className="topbar"><div className="topbar-inner">
-    <div className="brand"><span className="brand-mark" aria-hidden="true">+</span>Signoff</div>
-    {demo && <a className="demo-label" href="/">Local demo</a>}
+    <a className="brand" href="/"><span className="brand-mark" aria-hidden="true">+</span>Signoff</a>
+    {demo && <a className="demo-label" href="/app">Local demo</a>}
   </div></header>;
 }
 function Badge({ status }: { status: Status }) {
@@ -388,9 +388,17 @@ function Neighborhood({ area }: { area: Area | null | undefined }) {
     </div>}
   </section>;
 }
-function WorkOrder({ access }: { access: string }) {
+export function WorkOrder({ access }: { access: string }) {
   const { data, error, setData } = usePoll<Ticket>(`/api/work-orders/${encodeURIComponent(access)}`);
-  const inspectToken = new URLSearchParams(location.hash.slice(1)).get('inspect') ?? undefined;
+  const [inspectToken, setInspectToken] = useState<string>();
+  useEffect(() => {
+    function syncToken() {
+      setInspectToken(new URLSearchParams(window.location.hash.slice(1)).get('inspect') ?? undefined);
+    }
+    syncToken();
+    window.addEventListener('hashchange', syncToken);
+    return () => window.removeEventListener('hashchange', syncToken);
+  }, []);
   function confirmPoint(reportId: string, damagePoint: DamagePoint) {
     setData((current) => current && {
       ...current,
@@ -451,13 +459,13 @@ type Demo = {
   orders: { id: string; status: Status; access_key: string }[];
   messages: { target: string; body: string; created_at: string }[];
 };
-function DemoPage() {
-  const { data, error } = usePoll<Demo>('/api/demo');
+export function DemoPage() {
+  const health = usePoll<{ mode: 'live' | 'photon-test' | 'photon-sponsor' | 'demo' }>('/healthz');
+  const { data, error } = usePoll<Demo>(health.data?.mode === 'demo' ? '/api/demo' : undefined);
   const [role, setRole] = useState<Role>('tenant');
   const [text, setText] = useState('');
   const [image, setImage] = useState<File>();
   const [notice, setNotice] = useState('');
-  const health = usePoll<{mode: 'live' | 'photon-test' | 'demo'}>('/healthz');
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState<Record<string, { body: string; created_at: string }[]>>({});
   const choices = role === 'manager' ? ['Tuesday 2 to 4 PM', 'YES', 'FIXED']
@@ -502,7 +510,7 @@ function DemoPage() {
   return <><Header demo={!!data} /><main className="page">
     <section className="heading">
       <div><p className="eyebrow">Repair workflow</p><h1>From report to repair.</h1>
-        <p className="subtitle">{data ? 'Local rehearsal with a fictional property and simulated messages.' : error || 'Loading workspace…'}</p></div>
+        <p className="subtitle">{data ? 'Local rehearsal with a fictional property and simulated messages.' : error || health.error || 'Loading workspace…'}</p></div>
     </section>
     {data && <div className="demo-grid">
       <section className="panel composer">
@@ -535,9 +543,7 @@ function DemoPage() {
     </div>}
   </main></>;
 }
-const match = /^\/work-orders\/([^/]+)\/?$/.exec(location.pathname);
-const shared = /^\/reports\/([^/]+)\/?$/.exec(location.pathname);
-function SharedReport({ access }: { access: string }) {
+export function SharedReport({ access }: { access: string }) {
   const url = `/api/reports/${encodeURIComponent(access)}`;
   const { data, error } = usePoll<{ id: string; status: Status; issue: string; guidance: string; effects: string; area?: Area; renderStatus?: string }>(url);
   return <><Header /><main className="page">{data ? <>
@@ -549,4 +555,3 @@ function SharedReport({ access }: { access: string }) {
     <p className="inspection"><strong>Possible effects</strong> {data.effects}</p>
   </> : <p role="status">{error || 'Loading the repair report…'}</p>}</main></>;
 }
-createRoot(document.getElementById('root')!).render(match ? <WorkOrder access={match[1]} /> : shared ? <SharedReport access={shared[1]} /> : <DemoPage />);
