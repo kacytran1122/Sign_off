@@ -153,7 +153,7 @@ test('Photon sends renders and original tenant photos as typed binary attachment
   assert.equal(JSON.parse(String(requests[3].init?.body)).spaceId, 'manager-space');
 });
 
-test('photo, clarification, duplicate delivery, scheduling, and repair reopening', { timeout: 45_000 }, async () => {
+test('photo, clarification, duplicate delivery, scheduling, and repair reopening', { timeout: 45_000 }, async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'fix-spot-'));
   const [pgPort, appPort] = await Promise.all([port(), port()]);
   const db = new EmbeddedPostgres({
@@ -236,6 +236,20 @@ test('photo, clarification, duplicate delivery, scheduling, and repair reopening
     await send('other-zone', 'tenant', 'Water stain at reception window');
     const another = await wait(async () => (await snapshot()).orders.find((candidate) => candidate.id !== order.id));
     assert.equal(await fetch(`${origin}/api/work-orders/${another.access_key}`).then((r) => r.json()).then((t: Ticket) => t.zoneId), 'east-roof');
+
+    await t.test('photo bytes are scoped to the correct work-order key', async () => {
+      assert.equal(photoResponse.status, 200);
+      assert.equal(photoResponse.headers.get('content-type'), 'image/png');
+      assert.equal(photoResponse.headers.get('cache-control'), 'private, no-store');
+      assert.equal(photoResponse.headers.get('x-content-type-options'), 'nosniff');
+      const photoId = opened.reports[0].id;
+      const responses = await Promise.all([
+        fetch(`${origin}/api/work-orders/${another.access_key}/photos/${photoId}`),
+        fetch(`${origin}/api/work-orders/invalid-key/photos/${photoId}`),
+        fetch(`${url}/photos/invalid-id`),
+      ]);
+      assert.deepEqual(responses.map((response) => response.status), [404, 404, 404]);
+    });
   } finally {
     if (child && child.exitCode === null) {
       child.kill('SIGTERM');

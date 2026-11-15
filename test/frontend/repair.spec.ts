@@ -5,7 +5,7 @@ const photo = Buffer.from(
   'base64',
 );
 
-test('tenant photo opens a work order that the manager can schedule', async ({ page }) => {
+test('a tenant photo opens a work order that can be scheduled and reopened', async ({ page }) => {
   await page.goto('/');
   await expect(page).toHaveTitle('Signoff');
   await expect(page.getByRole('heading', { name: 'From report to repair.' })).toBeVisible();
@@ -37,6 +37,20 @@ test('tenant photo opens a work order that the manager can schedule', async ({ p
   await expect(thread).toContainText('I texted the affected tenants.');
   await page.goto(orderPath!);
   await expect(page.getByText('Scheduled', { exact: true })).toBeVisible();
+
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Manager', exact: true }).click();
+  await message.fill('FIXED');
+  await send.click();
+  await expect(thread).toContainText('I asked the affected tenants to verify');
+  await page.getByRole('button', { name: 'Tenant', exact: true }).click();
+  await expect(thread).toContainText('Your manager marked');
+  await message.fill('Still leaking');
+  await send.click();
+  await expect(thread).toContainText('is open again');
+  await page.goto(orderPath!);
+  await expect(page.getByText('Open', { exact: true })).toBeVisible();
+  await expect(page.getByText('Work order reopened', { exact: true })).toBeVisible();
 });
 
 test('tenant report links open directly and display the 3D guide', async ({ page }) => {
