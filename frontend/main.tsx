@@ -96,9 +96,9 @@ function Header({ demo, workspace, multiAgent }: { demo?: boolean; workspace?: b
       <SignoffLogo variant={workspace ? 'dark' : 'light'} />
     </a>
     {workspace ? <div className={demoStyles.headerLinks}>
-      {(demo || multiAgent) && <span className={demoStyles.mode}>{multiAgent ? (demo ? 'Multi-agent demo' : 'Multi-agent') : 'Local demo'}</span>}
+      {(demo || multiAgent) && <span className={demoStyles.mode}>{multiAgent ? 'Multi-agent' : 'Repair workspace'}</span>}
       <a href="/#how">How it works</a>
-    </div> : demo && <a className="demo-label" href="/app">Local demo</a>}
+    </div> : demo && <a className="demo-label" href="/app">Repair workspace</a>}
   </div></header>;
 }
 function Badge({ status }: { status: Status }) {
@@ -291,7 +291,7 @@ function Interior({ ticket, active, report, access, inspectToken, onConfirm }: {
       {comparison && <figure className="photo-reference"><img src={photoUrl} alt="Tenant photo for matching the damage spot" />
         <figcaption>{report.description}</figcaption></figure>}
     </div>
-      : <div className="diagram interior" role="img" aria-label={`Demo floor plan. Marker at ${active.label}`}>
+      : <div className="diagram interior" role="img" aria-label={`Floor plan diagram. Marker at ${active.label}`}>
         <div className="room west-north">Conference</div><div className="room east-north">Reception</div>
         <div className="room west-south">Studio</div><div className="room east-south">Office</div>
         <div className="hall">Hall</div>
@@ -429,8 +429,7 @@ export function WorkOrder({ access }: { access: string }) {
   return <><Header demo={data.demo} /><main className="page">
     <section className="heading">
       <div><p className="eyebrow">Work order L-{data?.id}</p><h1>{data.repair?.issue === 'damage' ? 'Building damage' : data.repair ? 'Water leak' : 'Ceiling leak'}</h1>
-        <p className="subtitle">{data.property.name} · {data.photonTest && !data.sponsorRehearsal ? 'Fictional property for live messaging test' : data.repair?.address ?? data.property.address}</p>
-        {data.sponsorRehearsal && <p className="subtitle">Demo work order</p>}</div>
+        <p className="subtitle">{data.property.name} · {data.photonTest && !data.sponsorRehearsal ? 'Property address unavailable' : data.repair?.address ?? data.property.address}</p></div>
       <Badge status={data.status} />
     </section>
     {error && <p role="status" className="notice">{error}</p>}
@@ -445,7 +444,7 @@ export function WorkOrder({ access }: { access: string }) {
     {data.repair && <Neighborhood area={data.repair.area} />}
     {data.repair && <p className="inspection"><strong>Possible effects</strong> {data.repair.effects}</p>}
     {data.renderStatus && !data.repair && <section className="panel evidence">
-      <div className="panel-head"><div><h2>3D inspection schematic</h2><p>Illustration of the ceiling report and suggested roof inspection area.</p></div></div>
+      <div className="panel-head"><div><h2>3D inspection schematic</h2><p>3D view of the reported ceiling and the suggested roof area.</p></div></div>
       {data.renderStatus === 'ready'
         ? <div className="roof-image"><img src={`/api/work-orders/${access}/render`} alt="Blender schematic of the reported ceiling and roof inspection area" /></div>
         : <p className="caption" role="status">{data.renderStatus === 'queued' ? 'Generating schematic…' : 'The schematic is unavailable.'}</p>}
@@ -535,9 +534,9 @@ export function DemoPage() {
           <p className={demoStyles.eyebrow}>Repair workspace</p>
           <h1 id="workspace-title">{live ? 'Signoff' : <>From report to <em>repair.</em></>}</h1>
           {live ? <p>{mode === 'photon-test'
-            ? 'Live iMessage test with a fictional property. Text your assigned line to start.'
+            ? 'Text your assigned iMessage line to start.'
             : 'Text your building’s repair line to report a leak. Open a work-order link from your conversation to view its evidence.'}</p>
-            : <p>{data ? 'Send a report as the tenant, then switch to the manager to schedule a visit. This demo uses a fictional property.'
+            : <p>{data ? 'Send a report as the tenant, then switch to the manager to schedule a visit.'
               : error || health.error || 'Loading workspace…'}</p>}
         </div>
       </section>

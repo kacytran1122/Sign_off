@@ -63,6 +63,7 @@ export function readMessage(object: unknown): Message | undefined {
   };
 }
 
+export const tenantPhotoWindowSeconds = 300;
 const tenantMention = /^@signoff(?=$|[\s,:])[\s,:]*/i;
 
 /** Gate Photon before downloading photos or asking a model to process a tenant's text. */

@@ -15,7 +15,7 @@ import { startBlenderWorker } from './blender.js';
 import { startAreaWorker } from './area.js';
 import { reportSnapshot, startReportPublisher } from './report-publication.js';
 import { guidance, repairEffects, repairTimeZone, type Aid, type Issue } from './repair.js';
-import { activatePhotonMessage, downloadPhoto, listReceivedMessages, photoLimit, readMessage, RetryableError, sendText, verifyEvent, type PhotonConnection } from './photon.js';
+import { activatePhotonMessage, downloadPhoto, listReceivedMessages, photoLimit, readMessage, RetryableError, sendText, tenantPhotoWindowSeconds, verifyEvent, type PhotonConnection } from './photon.js';
 import { handleMessage, photoOrderReply, prepareReport, remindManager } from './workflow.js';
 import { createAgents, planManager, runAgentTasks, runFollowUps } from './agents/index.js';
 import type { ManagerPlan } from './agents/scheduler.js';
@@ -193,9 +193,9 @@ app.get('/api/reports/:key', async (c) => {
   const key = keySchema.safeParse(c.req.param('key'));
   if (!key.success) return c.notFound();
   const { rows: [report] } = await db.query<Parameters<typeof reportSnapshot>[1]>(`
-    SELECT w.id,w.status,r.issue,r.aid,r.area,r.property_match,b.status AS "renderStatus",photo.landmark_id AS "landmarkId"
+    SELECT w.id,w.status,r.issue,r.aid,r.area,r.property_match,b.status AS "renderStatus",photo.landmark_id AS "landmarkId",photo.description
     FROM work_orders w JOIN repair_contexts r ON w.id=r.order_id LEFT JOIN blender_renders b ON w.id=b.order_id
-    LEFT JOIN LATERAL (SELECT landmark_id FROM reports WHERE order_id=w.id ORDER BY id LIMIT 1) photo ON true
+    LEFT JOIN LATERAL (SELECT landmark_id,description FROM reports WHERE order_id=w.id ORDER BY id LIMIT 1) photo ON true
     WHERE w.access_key=$1 AND w.property_id=$2`, [key.data, cfg.property.id]);
   if (!report) return c.notFound();
   c.header('Cache-Control', 'private, no-store');
@@ -313,7 +313,7 @@ async function tick() {
                 (prepared?.pending && !prepared.pending.photo &&
                   (prepared.interpreted?.isLeak || prepared.interpreted?.isDamage)));
               await client.query(`UPDATE conversations SET tenant_photo_until =
-                CASE WHEN $2 THEN now() + interval '5 minutes' END WHERE handle=$1`, [handle, !!expectsPhoto]);
+                CASE WHEN $2 THEN now() + $3 * interval '1 second' END WHERE handle=$1`, [handle, !!expectsPhoto, tenantPhotoWindowSeconds]);
             }
           }
           if (type === 'message.delivered' || type === 'message.failed') {

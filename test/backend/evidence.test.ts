@@ -195,4 +195,43 @@ test('repair evidence and render jobs in PostgreSQL', { timeout: 30_000 }, async
     assert((await lastText(cfg.manager)).includes(`#inspect=${order.inspection_key}`));
     assert(!(await lastText(tenant)).includes(order.inspection_key));
   });
+  await t.test('a separate photo preserves a typed address suggestion until the tenant confirms', async () => {
+    const id = 'separate-photo-address';
+    await send(tenant, 'Water dripping by the conference room window\n101 Fixtuer Avenue, Houston, TX', undefined, id);
+    assert.match(await lastText(tenant), /Did you mean 101 Fixture Avenue, Houston, TX/);
+    await send(tenant, '', jpeg);
+    assert.match(await lastText(tenant), /Did you mean 101 Fixture Avenue, Houston, TX/);
+    assert.equal((await pool.query('SELECT 1 FROM reports WHERE message_id=$1', [id])).rowCount, 0);
+    await send(tenant, 'YES');
+    const { rows } = await pool.query(`
+      SELECT r.photo,r.photo_type,o.target FROM reports r JOIN outbox o ON o.photo_report_id=r.id WHERE r.message_id=$1
+    `, [id]);
+    assert.deepEqual(rows, [{ photo: jpeg.bytes, photo_type: 'image/jpeg', target: cfg.manager }]);
+  });
+
+  await t.test('standard reports send the exact tenant photo to the manager in both message formats', async () => {
+    cfg.repairContext = false;
+    const upload = { bytes: png, type: 'image/png' };
+    const initial = 'standard-report-and-photo';
+    const separate = 'standard-report-before-photo';
+    const caption = 'Water dripping at the reception window';
+
+    await send(tenant, caption, jpeg, initial);
+    await send(tenant, caption, jpeg, initial);
+    await send(tenant, caption, undefined, separate);
+    // The two-minute-old report is still inside the window for a separate Photon photo.
+    await pool.query("UPDATE reports SET created_at=now() - interval '2 minutes' WHERE message_id=$1", [separate]);
+    await send(tenant, '', upload);
+    assert.match(await lastText(tenant), /I attached the photo/);
+
+    const { rows } = await pool.query(`
+      SELECT r.message_id,r.photo,r.photo_type,o.target FROM reports r JOIN outbox o ON o.photo_report_id=r.id
+      WHERE r.message_id=ANY($1::text[]) ORDER BY r.id
+    `, [[initial, separate]]);
+    assert.deepEqual(rows, [
+      { message_id: initial, photo: jpeg.bytes, photo_type: 'image/jpeg', target: cfg.manager },
+      { message_id: separate, photo: png, photo_type: 'image/png', target: cfg.manager },
+    ]);
+  });
+
 });

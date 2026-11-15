@@ -3,7 +3,7 @@ import { planRoofInspection } from './inspection.js';
 import { photoReviewUrl } from './damage-point.js';
 import { identifyLeak } from './ai.js';
 import { normalizeHandle, type Config, type Landmark } from './config.js';
-import { type Message, type Photo } from './photon.js';
+import { tenantPhotoWindowSeconds, type Message, type Photo } from './photon.js';
 import { formatVisit, looksLikeVisit, parseVisit, type Visit } from './schedule.js';
 import { belongsToProperty, guidance, repairTimeZone, reportAddress, safeAid, suggestPropertyAddress, type Aid, type Issue } from './repair.js';
 import { managerReport, repairReportUrl } from './reports.js';
@@ -76,18 +76,16 @@ async function addReportPhoto(db: PoolClient, cfg: Config, tenant: string, order
     UPDATE reports SET photo=$3, photo_type=$4
     WHERE photo IS NULL AND id=(SELECT r.id FROM reports r JOIN work_orders w ON w.id=r.order_id
       WHERE r.order_id=$1 AND r.reporter=$2 AND r.photo IS NULL AND w.status IN ('open','scheduled')
-        AND ($5 OR r.created_at > now() - interval '90 seconds') ORDER BY r.id DESC LIMIT 1)
+        AND w.property_id=$6 AND ($5 OR r.created_at > now() - $7 * interval '1 second') ORDER BY r.id DESC LIMIT 1)
     RETURNING id, landmark_id
-  `, [orderId, tenant, photo.bytes, photo.type, explicit]);
+  `, [orderId, tenant, photo.bytes, photo.type, explicit, cfg.property.id, tenantPhotoWindowSeconds]);
   if (!report) return false;
   await record(db, orderId, 'photo_added', 'Tenant added a photo to the report.');
-  if (cfg.repairContext) {
-    const { rows: [order] } = await db.query<Order>(`SELECT w.access_key,w.inspection_key FROM work_orders w
-      LEFT JOIN repair_contexts r ON w.id=r.order_id WHERE w.id=$1 AND COALESCE(r.property_match,true)`, [orderId]);
-    const review = order && photoReviewUrl(cfg, order, report.landmark_id);
-    await notify(db, cfg.manager, `${code(orderId)} · The tenant added this photo to the report.${review ? `\nMatch its location in Matterport: ${review}` : ''}`);
-    await queueManagerPhoto(db, cfg.manager, report.id);
-  }
+  const { rows: [order] } = await db.query<Order>(`SELECT w.access_key,w.inspection_key FROM work_orders w
+    LEFT JOIN repair_contexts r ON w.id=r.order_id WHERE w.id=$1 AND COALESCE(r.property_match,true)`, [orderId]);
+  const review = order && photoReviewUrl(cfg, order, report.landmark_id);
+  await notify(db, cfg.manager, `${code(orderId)} · The tenant added this photo to the report.${review ? `\nMatch its location in Matterport: ${review}` : ''}`);
+  await queueManagerPhoto(db, cfg.manager, report.id);
   await notify(db, tenant, `I attached the photo to ${code(orderId)}.`);
   return true;
 }
@@ -128,9 +126,7 @@ async function openReport(db: PoolClient, cfg: Config, handle: string, pending: 
       [order.id, subject, repair?.aid ?? null]);
   }
   await savePending(db, handle, {}, order.id);
-  await notify(db, handle, repair ? `${code(order.id)} logged. ${description.slice(0, 110)}\n${guidance[repair.aid]}${cfg.reportPublish ? '' : `\n${evidenceUrl}`}` : cfg.sponsorRehearsal && cfg.blenderRenderer
-    ? `Demo ${code(order.id)} is open. See the work order and 3D inspection schematic on this Mac: ${evidenceUrl}`
-    : `${code(order.id)} is with your property manager. I’ll text you when there’s an inspection time.`);
+  await notify(db, handle, repair ? `${code(order.id)} logged. ${description.slice(0, 110)}\n${guidance[repair.aid]}${cfg.reportPublish ? '' : `\n${evidenceUrl}`}` : `${code(order.id)} is with your property manager. I’ll text you when there’s an inspection time.`);
   if (order.status === 'scheduled') {
     const { rows } = await db.query<{ visit_start: Date; visit_end: Date }>('SELECT visit_start, visit_end FROM work_orders WHERE id=$1', [order.id]);
     const visit = { start: rows[0].visit_start.toISOString(), end: rows[0].visit_end.toISOString() };
@@ -141,7 +137,7 @@ async function openReport(db: PoolClient, cfg: Config, handle: string, pending: 
     if (cfg.reportPublish) await notify(db, handle, `${code(order.id)} · Full repair report: ${evidenceUrl}`, order.id);
     await notify(db, cfg.manager, managerReport({
       code: code(order.id), address: repair.address, description, issue: repair.issue, aid: repair.aid,
-      hasPhoto: !!pending.photo, photoReview, inspectionSummary: inspection?.summary, demo: cfg.demo || cfg.sponsorRehearsal || cfg.photonTest,
+      hasPhoto: !!pending.photo, photoReview, inspectionSummary: inspection?.summary,
     }));
     if (pending.photo) await queueManagerPhoto(db, cfg.manager, report.id);
     if (cfg.reportPublish) await notify(db, cfg.manager, `${code(order.id)} · Shared repair report: ${evidenceUrl}`, order.id);
@@ -151,14 +147,13 @@ async function openReport(db: PoolClient, cfg: Config, handle: string, pending: 
     return order.id;
   }
   await notify(db, cfg.manager, [
-    cfg.sponsorRehearsal
-      ? `Demo ${code(order.id)} · ${related.rowCount ? 'Related leak report' : 'New leak report'}`
-      : `${code(order.id)} · ${related.rowCount ? 'Related leak report' : 'New leak report'} · ${cfg.property.name}, suite ${point.suite}`,
+    `${code(order.id)} · ${related.rowCount ? 'Related leak report' : 'New leak report'} · ${cfg.property.name}, ${cfg.sponsorRehearsal ? point.suite : `suite ${point.suite}`}`,
     inspection?.summary,
     photoReview && `Match the tenant photo in Matterport: ${photoReview}`,
     `Evidence: ${evidenceUrl}`,
     'Reply with an inspection window, e.g. “Tuesday 2 to 4 PM”.',
   ].filter(Boolean).join('\n'));
+  if (pending.photo) await queueManagerPhoto(db, cfg.manager, report.id);
   return order.id;
 }
 
@@ -283,13 +278,16 @@ export async function prepareReport(db: PoolClient, cfg: Config, message: Messag
   const landmarks = cfg.property.landmarks.filter((point) => point.suite === participant.suite);
   const { rows } = await db.query<{ pending: Pending }>('SELECT pending FROM conversations WHERE handle=$1', [handle]);
   const prior = rows[0]?.pending ?? {};
-  const orderForPhoto = photoOrderReply.exec(message.text)?.[1] ?? prior.photoOrderId;
+  const orderForPhoto = photoOrderReply.exec(message.text)?.[1] ?? (!message.text ? prior.photoOrderId : undefined);
   if (orderForPhoto && photo) return { orderPhoto: { orderId: orderForPhoto, photo } };
   const picked = prior.choices && /^\d+$/.test(message.text) ? prior.choices[Number(message.text) - 1] : undefined;
   const mergedPhoto = photo ?? (prior.photo && { bytes: Buffer.from(prior.photo.base64, 'base64'), type: prior.photo.type });
   const acceptedAddress = confirmReply.test(message.text) ? prior.addressReview?.candidate : undefined;
   const enteredAddress = reportAddress(message.text);
-  const previousAddress = prior.addressReview ? undefined : prior.address ?? reportAddress(prior.text ?? '');
+  // A separate photo supplements the same report and must preserve the typed address.
+  const previousAddress = prior.addressReview
+    ? (!message.text ? prior.address : undefined)
+    : prior.address ?? reportAddress(prior.text ?? '');
   const address = acceptedAddress ?? enteredAddress ?? previousAddress;
   const text = [prior.text, picked || acceptedAddress ? '' : message.text].filter(Boolean).join('\n').slice(-2000);
   const pending: Pending = {
