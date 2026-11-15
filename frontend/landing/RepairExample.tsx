@@ -13,10 +13,10 @@ const stages = [
   { title: 'Tenant confirmation', image: tenantConfirmation, alt: 'Signoff timeline showing a scheduled inspection, the tenant confirming the fix, and the work order closing.' },
 ];
 
-export function RepairExample({ startWithReport = false }: { startWithReport?: boolean }) {
+export function RepairExample() {
   const id = useId();
   const tabs = useRef<Array<HTMLButtonElement | null>>([]);
-  const [active, setActive] = useState(startWithReport ? 0 : 1);
+  const [active, setActive] = useState(1);
 
   function moveTab(event: KeyboardEvent<HTMLButtonElement>, index: number) {
     const movement: Partial<Record<string, number>> = {

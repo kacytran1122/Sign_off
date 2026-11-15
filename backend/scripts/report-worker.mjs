@@ -385,9 +385,9 @@ function buildingContent(building, report) {
   </section>`;
 }
 
+const reportCanvas = 'margin:0;background:#faf6f3;color:#291d27;font:16px/1.55 system-ui,-apple-system,sans-serif';
 const styles = `
 *{box-sizing:border-box}
-body{margin:0;background:#faf6f3;color:#291d27;font:16px/1.55 system-ui,-apple-system,sans-serif}
 h1,h2,h3,p,figure,dl{margin:0}
 h1,h2{font-family:Georgia,serif;font-weight:400;letter-spacing:-.04em;line-height:1.1}
 h1{font-size:clamp(2.8rem,8vw,5.25rem)}h2{font-size:clamp(1.9rem,4.5vw,2.85rem)}
@@ -433,28 +433,47 @@ footer{padding:0 0 2rem;color:#614e5d;font-size:.83rem}
 @media(max-width:730px){.action-grid,.chart-grid{grid-template-columns:minmax(0,1fr)}.shell{width:calc(100% - 1.3rem)}.chart-ticks text{font-size:23px}}
 `;
 
-function reportHtml(report, uuid) {
+function reportMarkup(report, { navigationHref, navigationLabel, reference, renderSrc, footer }) {
   const scenario = Object.hasOwn(scenarios, report.scenario) ? scenarios[report.scenario] : undefined;
   const precaution = Object.hasOwn(precautions, report.aid) ? precautions[report.aid] : undefined;
   const title = scenario?.title ?? precaution?.title ?? (report.issue === 'leak' ? 'Water leak' : 'Building damage');
   const action = precaution?.action ?? 'Temporary protection';
   const model = (report.aid !== 'clear' && scenario?.model) || precaution?.model || 'Temporary protection for the reported condition';
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-    <meta name="robots" content="noindex,nofollow"><title>${title} · Signoff</title><style>${styles}</style></head><body>
-    <header><nav class="shell" aria-label="Signoff"><span class="mark">Signoff</span><a class="refresh" href="/reports/${uuid}">Refresh report</a></nav></header>
-    <section class="hero"><div class="shell"><p>Work order L-${esc(report.id)}</p><h1>${title}</h1><span class="badge ${report.status === 'closed' ? 'closed' : ''}">${states[report.status]}</span></div></section>
+  const html = `<header><nav class="shell" aria-label="Signoff"><span class="mark">Signoff</span><a class="refresh" href="${esc(navigationHref)}">${esc(navigationLabel)}</a></nav></header>
+    <section class="hero"><div class="shell"><p>${esc(reference)}</p><h1>${title}</h1><span class="badge ${report.status === 'closed' ? 'closed' : ''}">${states[report.status]}</span></div></section>
     <main class="shell">
       <div class="action-grid">
         <section class="card action-card" aria-labelledby="action"><h2 id="action">${action}</h2><p>${esc(report.guidance)}</p>
           <div class="action-pair"><h3>Possible effects</h3><p class="muted">${esc(report.effects)}</p>${scenario?.inspection ? `<h3>Maintenance check</h3><p>${scenario.inspection}</p>` : ''}</div>
         </section>
         <figure class="card model-card">
-          ${report.renderStatus === 'ready' ? `<img src="/api/reports/${uuid}/render" alt="3D model: ${model}">` : `<p class="model-pending muted">${report.renderStatus === 'queued' ? 'The 3D model is being prepared. Refresh this page for an update.' : 'A 3D model is unavailable.'}</p>`}
+          ${report.renderStatus === 'ready' ? `<img src="${esc(renderSrc)}" alt="3D model: ${model}">` : `<p class="model-pending muted">${report.renderStatus === 'queued' ? 'The 3D model is being prepared. Refresh this page for an update.' : 'A 3D model is unavailable.'}</p>`}
           <figcaption><strong>3D reference model</strong>${report.renderStatus === 'ready' ? `<p>${model}.</p><p class="muted">Blender rendered</p>` : ''}</figcaption>
         </figure>
       </div>
       ${buildingContent(report.building, report)}${neighborhood(report.area)}
-    </main><footer class="shell">Signoff repair report · Share this link only with people helping with the repair.</footer></body></html>`;
+    </main><footer class="shell">${esc(footer)}</footer>`;
+  return { title, html };
+}
+
+function reportHtml(report, uuid) {
+  const { title, html } = reportMarkup(report, {
+    navigationHref: `/reports/${uuid}`, navigationLabel: 'Refresh report',
+    reference: `Work order L-${report.id}`, renderSrc: `/api/reports/${uuid}/render`,
+    footer: 'Signoff repair report · Share this link only with people helping with the repair.',
+  });
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="robots" content="noindex,nofollow"><title>${title} · Signoff</title><style>body{${reportCanvas}}${styles}</style></head><body>
+    ${html}</body></html>`;
+}
+
+export function renderPublicReportExample(report, renderSrc) {
+  const { html } = reportMarkup(report, {
+    navigationHref: '/', navigationLabel: 'Back to Signoff',
+    reference: 'Public repair example', renderSrc,
+    footer: 'Signoff repair report · Public example',
+  });
+  return { html, css: `@scope (.signoff-public-report) { :scope{${reportCanvas};min-height:100vh} ${styles} }` };
 }
 
 export default {

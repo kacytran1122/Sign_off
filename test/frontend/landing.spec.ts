@@ -37,39 +37,38 @@ test('the landing page introduces Signoff and leads to the repair workspace', as
   await expect(page.getByRole('button', { name: 'Tenant', exact: true })).toBeVisible();
 });
 
-test('the landing page and standalone repair example work on mobile', async ({ page }) => {
+test('the standalone example renders the production report layout without loading a live work order', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 844 });
+  await page.route('https://www.arcgis.com/apps/Embed/**', (route) => route.fulfill({ body: '' }));
+  const privateRequests: string[] = [];
+  page.on('request', request => {
+    const path = new URL(request.url()).pathname;
+    if (/^\/(?:app|api|reports|internal|work-orders)(?:\/|$)/.test(path)) privateRequests.push(path);
+  });
   await page.goto('/');
   const example = page.getByRole('link', { name: 'Explore the repair', exact: true });
   await expect(example).toBeInViewport();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
   await example.click();
   await expect(page).toHaveURL(/\/repair-example$/);
-  await expect(page.getByRole('heading', { level: 1, name: 'From photo to signoff.' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Ceiling leak' })).toBeVisible();
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', 'https://signoffon.us/repair-example');
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
 
-  const showcase = page.getByRole('main');
-  const report = showcase.getByRole('tab', { name: 'Tenant report' });
-  await expect(report).toHaveAttribute('aria-selected', 'true');
-  const photo = showcase.getByRole('tabpanel', { name: 'Tenant report' }).getByRole('img');
-  await expect.poll(() => photo.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
-  const review = showcase.getByRole('tab', { name: 'Manager review' });
-  await review.click();
-  const order = showcase.getByRole('tabpanel', { name: 'Manager review' });
-  const reviewCapture = order.getByRole('img', { name: /Signoff repair report/ });
-  await expect.poll(() => reviewCapture.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
-  const fullCapture = order.getByRole('link', { name: 'Enlarge report capture' });
-  const captureHref = await fullCapture.getAttribute('href');
-  expect(captureHref).toBeTruthy();
-  expect((await page.request.get(captureHref!)).ok()).toBe(true);
-  await review.press('ArrowRight');
-  const verification = showcase.getByRole('tab', { name: 'Tenant confirmation' });
-  await expect(verification).toHaveAttribute('aria-selected', 'true');
-  await expect(verification).toBeFocused();
-  const timeline = showcase.getByRole('tabpanel', { name: 'Tenant confirmation' }).getByRole('img');
-  await expect.poll(() => timeline.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
-  await expect(page.getByRole('link', { name: 'Get started' })).toHaveCount(0);
+  const report = page.getByRole('main');
+  await expect(report.getByRole('heading', { name: 'Contain a small drip safely' })).toBeVisible();
+  await expect(report.getByText('Blender rendered', { exact: true })).toBeVisible();
+  const model = report.getByRole('img', { name: /3D model: Bucket below a drip/ });
+  await expect(model).toHaveAttribute('src', '/repair-example-model.webp');
+  await expect.poll(() => model.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
+  await expect(report.locator('.chart-line')).toHaveCount(2);
+  await expect(report.locator('iframe[title="Neighborhood satellite map"]')).toHaveAttribute('src', /center=-95\.370%2C29\.760/);
+  await expect(page.getByRole('tab')).toHaveCount(0);
+  expect(privateRequests).toEqual([]);
+
+  const alternate = await page.goto('/repair-ecxample');
+  expect(alternate?.ok()).toBe(true);
+  await expect(page.getByRole('heading', { level: 1, name: 'Ceiling leak' })).toBeVisible();
   await page.getByRole('link', { name: 'Back to Signoff' }).click();
   await expect(page).toHaveURL(/\/$/);
 });
