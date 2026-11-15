@@ -6,7 +6,7 @@ import { normalizeHandle, type Config, type Landmark } from './config.js';
 import { tenantPhotoWindowSeconds, type Message, type Photo } from './photon.js';
 import { formatVisit, looksLikeVisit, parseVisit, type Visit } from './schedule.js';
 import { belongsToProperty, guidance, repairTimeZone, reportAddress, safeAid, suggestPropertyAddress, tenantLeakGuide, type Aid, type Issue, type LeakGuideImage } from './repair.js';
-import { managerReport, repairReportUrl } from './reports.js';
+import { managerReport, managerWorkOrderLink, managerWorkspaceUrl, repairReportUrl } from './reports.js';
 import { runIntake, type IntakeResult } from './agents/intake.js';
 import { warnAgentFailure, type Model } from './agents/runtime.js';
 import type { ManagerPlan } from './agents/scheduler.js';
@@ -51,7 +51,8 @@ export async function record(db: PoolClient, id: string, action: string, detail:
 }
 export async function remindManager(db: PoolClient, cfg: Config, order: { id: string; access_key: string }, lead?: string) {
   await record(db, order.id, 'reminder', 'Sent the manager a reminder to schedule the inspection.');
-  await notify(db, cfg.manager, `${lead ?? `Reminder: ${code(order.id)} is waiting for an inspection window.`} ${cfg.baseUrl}/work-orders/${order.access_key}`);
+  const link = await managerWorkOrderLink(db, cfg, order);
+  await notify(db, cfg.manager, [lead ?? `Reminder: ${code(order.id)} is waiting for an inspection window.`, link].filter(Boolean).join("\n"));
 }
 
 const confirmReply = /^(yes|confirm)(?:\s+L-\d+)?[.!]?$/i;
@@ -121,7 +122,7 @@ async function openReport(db: PoolClient, cfg: Config, handle: string, pending: 
     ? planRoofInspection(cfg.property, point, repair?.aid) : undefined;
   if (inspection && !related.rowCount) await record(db, order.id, 'inspection_planned', inspection.summary);
   if (cfg.agentMode) await enqueueAgentTask(db, 'evidence', order.id);
-  const evidenceUrl = repair ? repairReportUrl(cfg, order.access_key) : `${cfg.baseUrl}/work-orders/${order.access_key}`;
+  const evidenceUrl = repairReportUrl(cfg, order.access_key);
   if (cfg.blenderRenderer) {
     const room = point.label.toLowerCase().split(' ')[0];
     const subject = room === 'lobby' || room === 'warehouse' ? room : 'inspection';
@@ -155,11 +156,12 @@ async function openReport(db: PoolClient, cfg: Config, handle: string, pending: 
     }
     return order.id;
   }
+  const workspace = managerWorkspaceUrl(cfg, order.access_key);
   await notify(db, cfg.manager, [
     `${code(order.id)} · ${related.rowCount ? 'Related leak report' : 'New leak report'} · ${cfg.property.name}, ${cfg.sponsorRehearsal ? point.suite : `suite ${point.suite}`}`,
     inspection?.summary,
     photoReview && `Match the tenant photo in Matterport: ${photoReview}`,
-    `Evidence: ${evidenceUrl}`,
+    workspace && `Evidence: ${workspace}`,
     'Reply with an inspection window, e.g. “Tuesday 2 to 4 PM”.',
   ].filter(Boolean).join('\n'));
   if (pending.photo) await queueManagerPhoto(db, cfg.manager, report.id);
@@ -180,7 +182,8 @@ async function tenantUpdate(db: PoolClient, cfg: Config, handle: string, id: str
     await db.query('UPDATE reports SET confirmed_at=NULL WHERE order_id=$1', [id]);
     const detail = order.issue === 'damage' ? 'Tenant reported that the damage remains.' : 'Tenant reported that the leak is continuing.';
     await record(db, id, 'reopened', detail);
-    await notify(db, cfg.manager, `${code(id)} reopened. ${detail}${order.issue ? '' : ` ${cfg.baseUrl}/work-orders/${order.access_key}`}`);
+    const link = await managerWorkOrderLink(db, cfg, order);
+    await notify(db, cfg.manager, [`${code(id)} reopened. ${detail}`, link].filter(Boolean).join("\n"));
     return notify(db, handle, `${code(id)} is open again. I’ve let your property manager know.`);
   }
   const updated = await db.query('UPDATE reports SET confirmed_at=now() WHERE order_id=$1 AND reporter=$2 AND confirmed_at IS NULL', [id, handle]);

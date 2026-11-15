@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { Config } from './config.js';
+import { managerWorkspaceUrl } from './reports.js';
 
 const coordinate = z.number().min(-10_000).max(10_000);
 const vector = z.object({ x: coordinate, y: coordinate, z: coordinate });
@@ -25,5 +26,6 @@ export function confirmedDamageAnchor(input: unknown, modelId: string | undefine
 export function photoReviewUrl(config: Config, order: { access_key: string; inspection_key: string }, landmarkId: string) {
   if (!config.property.matterportModel || !config.matterportKey ||
       !config.property.landmarks.some((landmark) => landmark.id === landmarkId)) return;
-  return `${config.baseUrl}/work-orders/${order.access_key}#inspect=${order.inspection_key}`;
+  const workspace = managerWorkspaceUrl(config, order.access_key);
+  if (workspace) return `${workspace}#inspect=${order.inspection_key}`;
 }

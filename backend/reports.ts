@@ -73,6 +73,24 @@ export function repairReportUrl(config: { reportShareOrigin?: string; baseUrl: s
   return config.reportShareOrigin ? `${config.reportShareOrigin}/reports/${key}` : `${config.baseUrl}/reports/${key}`;
 }
 
+export function managerWorkspaceUrl(config: Pick<Config, 'baseUrl' | 'demo'>, key: string) {
+  const { protocol, hostname } = new URL(config.baseUrl);
+  const loopback = hostname === 'localhost' || hostname.endsWith('.localhost') || hostname === '[::1]' || /^127\./.test(hostname);
+  if (config.demo || (protocol === 'https:' && !loopback)) return `${config.baseUrl}/work-orders/${key}`;
+}
+
+export async function managerWorkOrderLink(
+  db: Pick<Pool, 'query'>,
+  config: Pick<Config, 'baseUrl' | 'demo' | 'reportShareOrigin' | 'reportPublish'>,
+  order: { id: string; access_key: string },
+) {
+  if (config.reportPublish && config.reportShareOrigin) {
+    const { rowCount } = await db.query('SELECT 1 FROM report_publications WHERE order_id=$1 AND revision IS NOT NULL', [order.id]);
+    if (rowCount) return repairReportUrl(config, order.access_key);
+  }
+  return managerWorkspaceUrl(config, order.access_key);
+}
+
 export async function queueAreaNotices(db: Pool, config: Pick<Config, 'reportShareOrigin' | 'baseUrl' | 'reportPublish'>) {
   const client = await db.connect();
   try {
