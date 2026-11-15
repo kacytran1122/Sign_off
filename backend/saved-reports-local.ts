@@ -22,9 +22,10 @@ export function localSavedReports(file = resolve('.fix-this-spot', 'saved-report
 
   async function open() {
     const workerSource = new URL('../../backend/scripts/saved-reports-worker.mjs', import.meta.url);
-    const { default: worker, savedReportsSchema }: {
+    const { default: worker, savedReportsSchema, savedReportsPhotonSchema }: {
       default: { fetch(request: Request, env: { DB: ReturnType<typeof adaptDatabase> }): Promise<Response> };
       savedReportsSchema: string;
+      savedReportsPhotonSchema: string;
     } = await import(workerSource.href);
     const { DatabaseSync } = await import('node:sqlite');
     if (file !== ':memory:') mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
@@ -32,6 +33,7 @@ export function localSavedReports(file = resolve('.fix-this-spot', 'saved-report
     try {
       db.exec('PRAGMA busy_timeout = 5000');
       db.exec(savedReportsSchema);
+      db.exec(savedReportsPhotonSchema);
     } catch (error) {
       db.close();
       throw error;

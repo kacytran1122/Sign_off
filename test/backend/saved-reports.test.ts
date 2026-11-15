@@ -10,6 +10,9 @@ const hostname = 'https://reports.signoffon.us';
 const website = 'https://signoffon.us';
 const base = '/api/saved-reports';
 const session = `${base}/session`;
+const photon = `${base}/photon`;
+const internal = '/internal/saved-photon';
+const bridgeToken = 'fixture-token-for-private-photon-bridge';
 
 function binding(database: DatabaseSync) {
   return {
@@ -18,6 +21,7 @@ function binding(database: DatabaseSync) {
       return {
         bind(...params: SQLInputValue[]) {
           return {
+            async all() { return { results: statement.all(...params) }; },
             async first() { return statement.get(...params) ?? null; },
             async run() { return statement.run(...params); },
           };
@@ -29,10 +33,11 @@ function binding(database: DatabaseSync) {
 }
 
 async function fixture(filename = ':memory:') {
-  const { default: worker, savedReportsSchema } = await import(pathToFileURL(resolve('backend/scripts/saved-reports-worker.mjs')).href);
+  const { default: worker, savedReportsSchema, savedReportsPhotonSchema } = await import(pathToFileURL(resolve('backend/scripts/saved-reports-worker.mjs')).href);
   const database = new DatabaseSync(filename);
   database.exec(savedReportsSchema);
-  const env = { DB: binding(database), ALLOWED_ORIGIN: `${website}, https://www.signoffon.us` };
+  database.exec(savedReportsPhotonSchema);
+  const env = { DB: binding(database), ALLOWED_ORIGIN: `${website}, https://www.signoffon.us`, REPORT_PUBLISH_TOKEN: bridgeToken };
   const request = (path: string, init: RequestInit = {}): Promise<Response> => worker.fetch(new Request(hostname + path, init), env);
   const send = (path: string, method: string, body: unknown, cookie?: string, origin = website) => request(path, {
     method, body: JSON.stringify(body),
@@ -42,7 +47,11 @@ async function fixture(filename = ':memory:') {
     },
   });
   const login = (password: string, cookie?: string) => send(session, 'POST', { username: 'signoff', password }, cookie);
-  return { database, request, send, login };
+  const bridge = (path: string, method = 'GET', body?: unknown) => request(internal + path, {
+    method, body: body === undefined ? undefined : JSON.stringify(body),
+    headers: { Authorization: `Bearer ${bridgeToken}`, 'Content-Type': 'application/json' },
+  });
+  return { database, request, send, login, bridge };
 }
 
 function cookieFrom(response: Response) {
@@ -138,4 +147,72 @@ test('saved reports checks browser origins, payload bounds, and session expiry',
   database.prepare('UPDATE saved_report_sessions SET expires_at=0').run();
   assert.deepEqual(await (await request(session, { headers: { Cookie: sessionCookie } })).json(), { role: null });
   assert.equal((await request(base, { headers: { Cookie: sessionCookie } })).status, 401);
+});
+
+test('Photon proof authorizes only the linked browser session and property', async t => {
+  const { database, request, bridge, login } = await fixture();
+  t.after(() => database.close());
+  const propertyId = 'property-a';
+  const tenantScope = 'a'.repeat(64);
+  const otherTenantScope = 'b'.repeat(64);
+  const landlordScope = 'c'.repeat(64);
+  const tenant = cookieFrom(await login('signoff'));
+  const otherTenant = cookieFrom(await login('signoff'));
+  const landlord = cookieFrom(await login('landyord'));
+  const fixedOnly = cookieFrom(await login('signoff'));
+  const read = (Cookie: string, method = 'GET') => request(photon, { method, headers: { Cookie, Origin: website } });
+  const verify = (code: string, role: string, scope: string) => bridge('/verify', 'POST', { code, role, scope, propertyId });
+  const write = (scope: string, reports: unknown[], building = propertyId) => bridge('/reports', 'PUT', { scope, propertyId: building, reports });
+  const record = (id: string, url?: string) => ({ id, title: 'Repair report', status: 'open', createdAt: '2026-11-15T13:00:00.000Z', url });
+  const tenantReport = record('7', '/reports/8d08830e-ee22-4b50-bcb8-71bb8d176520');
+  const otherTenantReport = record('8');
+
+  assert.equal((await request(photon)).status, 401);
+  assert.equal((await request(`${internal}/scopes?propertyId=${propertyId}`)).status, 404);
+  assert.equal((await write(tenantScope, [tenantReport])).status, 404);
+  assert.deepEqual(await (await read(tenant)).json(), { state: 'unlinked', reports: [] });
+  const pending = await (await read(tenant, 'POST')).json();
+  assert.equal(pending.state, 'pending');
+  assert.match(pending.code, /^[0-9A-F]{32}$/);
+  assert.deepEqual(await (await read(tenant, 'POST')).json(), pending);
+  const otherCode = (await (await read(otherTenant, 'POST')).json()).code;
+  const landlordCode = (await (await read(landlord, 'POST')).json()).code;
+  assert.notEqual(otherCode, pending.code);
+  assert.equal((await verify(pending.code, 'landlord', landlordScope)).status, 409);
+  assert.equal((await verify(pending.code, 'tenant', tenantScope)).status, 204);
+  assert.equal((await verify(pending.code, 'tenant', tenantScope)).status, 204);
+  assert.equal((await verify(pending.code, 'tenant', otherTenantScope)).status, 409);
+  assert.equal((await verify(otherCode, 'tenant', otherTenantScope)).status, 204);
+  assert.equal((await verify(landlordCode, 'landlord', landlordScope)).status, 204);
+  assert.deepEqual(await (await read(tenant)).json(), { state: 'linked', reports: [], syncing: true });
+  const scopes = await (await bridge(`/scopes?propertyId=${propertyId}`)).json();
+  assert.deepEqual(scopes.scopes.sort(), [tenantScope, otherTenantScope, landlordScope]);
+  assert.deepEqual(await (await bridge('/scopes?propertyId=property-b')).json(), { scopes: [] });
+  assert.equal((await write(tenantScope, [tenantReport], 'property-b')).status, 404);
+  assert.equal((await write(tenantScope, [record('7', 'https://example.invalid/report')])).status, 400);
+
+  assert.equal((await write(tenantScope, [{ ...tenantReport, reporter: 'private-field' }])).status, 204);
+  assert.equal((await write(otherTenantScope, [otherTenantReport])).status, 204);
+  assert.equal((await write(landlordScope, [tenantReport, otherTenantReport])).status, 204);
+  assert.deepEqual(await (await read(tenant)).json(), { state: 'linked', reports: [tenantReport] });
+  assert.deepEqual(await (await read(otherTenant)).json(), {
+    state: 'linked', reports: [{ id: '8', title: 'Repair report', status: 'open', createdAt: '2026-11-15T13:00:00.000Z' }],
+  });
+  const landlordList = await read(landlord);
+  assert.equal(landlordList.headers.get('Cache-Control'), 'private, no-store');
+  assert.deepEqual((await landlordList.json()).reports.map((report: { id: string }) => report.id), ['7', '8']);
+  assert.deepEqual(await (await read(fixedOnly)).json(), { state: 'unlinked', reports: [] });
+
+  const expired = (await (await read(fixedOnly, 'POST')).json()).code;
+  database.prepare('UPDATE saved_photon_links SET expires_at=0 WHERE code=?').run(expired);
+  assert.equal((await verify(expired, 'tenant', tenantScope)).status, 404);
+  assert.deepEqual(await (await read(fixedOnly)).json(), { state: 'unlinked', reports: [] });
+  assert.notEqual((await (await read(fixedOnly, 'POST')).json()).code, expired);
+
+  database.prepare('UPDATE saved_photon_report_index SET updated_at=0 WHERE scope=?').run(tenantScope);
+  assert.deepEqual(await (await read(tenant)).json(), { state: 'linked', reports: [], syncing: true });
+  assert.equal((await request(session, { method: 'DELETE', headers: { Cookie: tenant } })).status, 200);
+  assert.equal((await read(tenant)).status, 401);
+  assert.equal((await verify(pending.code, 'tenant', tenantScope)).status, 404);
+  assert.equal((await write(tenantScope, [tenantReport])).status, 404);
 });
