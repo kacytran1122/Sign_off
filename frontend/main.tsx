@@ -36,11 +36,17 @@ type Ticket = {
   reports: TenantReport[];
   timeline: { action: string; detail: string; created_at: string }[];
 };
+type BuildingEvidence = {
+  storiesAboveGrade: number; buildingType?: string; propertySubtype?: string; buildingAreaSqFt?: number; yearBuilt?: number;
+  roomLabel?: string; roomEvidence?: { areaSqFt?: number; widthFt?: number; depthFt?: number; heightFt?: number };
+  matchedRooms?: number; matchedViewpoints?: number; hasMatterport?: boolean; hasVexcel?: boolean;
+  captureDate?: string; analysisDate?: string;
+};
 type Area = {
   latitude?: number; longitude?: number; city?: string; error?: string; timeZone?: string; store?: string;
   weather?: { current: { temperature_2m: number; apparent_temperature: number; relative_humidity_2m: number };
     daily: { time: string[]; apparent_temperature_max: (number | null)[] } };
-  coverage?: { start_date: string; through_date: string; indicators: { water: number; waste: number } };
+  coverage?: { start_date: string; through_date: string; indicators: { water: number; waste: number; rodentMentions?: number } };
   heat?: { typicalHighF: number; validationMaeF: number; trainedThrough: string };
   history?: { time: string; feelsLikeF: number }[];
 };
@@ -388,8 +394,9 @@ function Neighborhood({ area }: { area: Area | null | undefined }) {
           </div>
         </div>}
       </div>
-      <div><h3>Conditions that attract rodents</h3>
+      <div><h3>Rodents and nearby 311 reports</h3>
         {area.coverage && <p>{area.coverage.indicators.water} water-related and {area.coverage.indicators.waste} waste-related 311 reports within 1 km from {area.coverage.start_date} to {area.coverage.through_date}.</p>}
+        {area.coverage?.indicators.rodentMentions !== undefined && <p>{area.coverage.indicators.rodentMentions} Houston 311 reports in the same area and dates mentioned mice or rats.</p>}
         <p>These records do not establish whether mice or rats are at the building. Tell maintenance if you see rodents, droppings or gnaw marks.</p>
         {area.coverage && <p className="caption"><a href={area.city === 'LOS ANGELES' ? 'https://data.lacity.org/d/2cy6-i7zn' : 'https://my311.houstontx.gov/servicerequestdata.html'} target="_blank" rel="noreferrer">City 311 records</a></p>}
       </div>
@@ -591,13 +598,26 @@ export function DemoPage() {
 }
 export function SharedReport({ access }: { access: string }) {
   const url = `/api/reports/${encodeURIComponent(access)}`;
-  const { data, error } = usePoll<{ id: string; status: Status; issue: string; guidance: string; effects: string; area?: Area; renderStatus?: string }>(url);
+  const { data, error } = usePoll<{ id: string; status: Status; issue: string; guidance: string; effects: string;
+    area?: Area; building?: BuildingEvidence; renderStatus?: string }>(url);
+  const building = data?.building;
   return <><Header /><main className="page">{data ? <>
     <section className="heading"><div><p className="eyebrow">Work order L-{data.id}</p><h1>{data.issue === 'leak' ? 'Water leak' : 'Building damage'}</h1></div><Badge status={data.status} /></section>
     <section className="panel evidence"><div className="panel-head"><div><h2>Temporary protection</h2><p>{data.guidance}</p></div></div>
       {data.renderStatus === 'ready' ? <div className="roof-image"><img src={`${url}/render`} alt="3D guide showing temporary protection and what maintenance should repair" /></div>
         : data.renderStatus === 'queued' && <p className="caption">Generating the 3D diagram…</p>}</section>
     <Neighborhood area={data.area} />
+    <section className="panel evidence">
+      <div className="panel-head"><h2>CoStar Group building evidence</h2></div>
+      {building ? <dl className="attributes">
+        {building.buildingType && <div><dt>Property type</dt><dd>{building.propertySubtype ?? building.buildingType}</dd></div>}
+        <div><dt>Above-grade floors</dt><dd>{building.storiesAboveGrade}</dd></div>
+        {building.buildingAreaSqFt && <div><dt>Building area</dt><dd>{building.buildingAreaSqFt.toLocaleString('en-US')} sq ft</dd></div>}
+        {building.yearBuilt && <div><dt>Year built</dt><dd>{building.yearBuilt}</dd></div>}
+        {building.hasMatterport && <div><dt>Matterport</dt><dd>{building.roomLabel ?? 'Verified building model'}{building.roomEvidence?.areaSqFt && ` · ${building.roomEvidence.areaSqFt.toLocaleString('en-US')} sq ft measured`}</dd></div>}
+        {building.hasVexcel && <div><dt>Vexcel</dt><dd>{building.captureDate ? `Roof image captured ${building.captureDate}` : 'Roof evidence available to maintenance'}</dd></div>}
+      </dl> : <p className="caption">CoStar building evidence is unavailable for this address.</p>}
+    </section>
     <p className="inspection"><strong>Possible effects</strong> {data.effects}</p>
   </> : <p role="status">{error || 'Loading the repair report…'}</p>}</main></>;
 }

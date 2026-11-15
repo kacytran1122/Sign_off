@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS outbox (
 );
 ALTER TABLE outbox ADD COLUMN IF NOT EXISTS render_order_id bigint REFERENCES work_orders (id) ON DELETE CASCADE;
 ALTER TABLE outbox ADD COLUMN IF NOT EXISTS is_render boolean NOT NULL DEFAULT false;
+ALTER TABLE outbox ADD COLUMN IF NOT EXISTS shared_order_id bigint REFERENCES work_orders (id) ON DELETE CASCADE;
 ALTER TABLE outbox ADD COLUMN IF NOT EXISTS photo_report_id bigint REFERENCES reports (id) ON DELETE CASCADE;
 CREATE TABLE IF NOT EXISTS agent_tasks (
   id bigserial PRIMARY KEY,
@@ -108,3 +109,9 @@ CREATE TABLE IF NOT EXISTS agent_tasks (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS agent_tasks_queue ON agent_tasks (status, run_after);
+
+CREATE TABLE IF NOT EXISTS report_publications (
+  order_id bigint PRIMARY KEY REFERENCES work_orders(id) ON DELETE CASCADE,
+  revision text,
+  retry_after timestamptz
+);

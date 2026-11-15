@@ -112,7 +112,7 @@ export function PhonePreview() {
           </div>
           <p className={styles.incoming} data-revealed={revealed >= 2}>I’ve sent the photo to your manager. The crew can visit Tuesday, 2–4 PM.</p>
           <p className={styles.incoming} data-revealed={revealed >= 3}>Your manager marked it fixed. Is the ceiling still leaking?</p>
-          <p className={styles.outgoing} data-revealed={revealed >= 4}>Resolved. It’s dry now.</p>
+          <p className={styles.outgoing} data-revealed={revealed >= 4}><strong>@signoff</strong> Resolved. It’s dry now.</p>
           <p className={styles.signed} data-revealed={revealed >= 5}><SignoffLogo compact /> Signed off by tenant</p>
         </div>
         <i className={styles.homeBar} aria-hidden="true" />

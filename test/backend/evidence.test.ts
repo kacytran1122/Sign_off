@@ -87,6 +87,9 @@ test('repair evidence and render jobs in PostgreSQL', { timeout: 30_000 }, async
     assert.equal((await pool.query('SELECT 1 FROM work_orders')).rowCount, 0);
 
     await send(tenant, '200 N Spring St, Los Angeles, CA');
+    assert.match(await lastText(tenant), /I read 200 N Spring St, Los Angeles, CA/);
+    assert.equal((await pool.query('SELECT 1 FROM work_orders')).rowCount, 0);
+    await send(tenant, 'YES');
     await send(tenant, 'Water dripping from the ceiling at 200 N Spring St, Los Angeles, CA', jpeg, 'initial-leak');
     const jobs = await evidenceJobs();
     assert.equal((await pool.query('SELECT 1 FROM reports')).rowCount, 1);
@@ -103,6 +106,7 @@ test('repair evidence and render jobs in PostgreSQL', { timeout: 30_000 }, async
 
   await t.test('follow-up photos require the original reporter and cannot replace evidence', async () => {
     await send(tenant, 'Broken stair tread in the lobby at 201 N Spring St, Los Angeles, CA');
+    await send(tenant, 'YES');
     await send(otherTenant, `PHOTO L-${ids.stair}`);
     await send(otherTenant, '', jpeg);
     assert.match(await lastText(otherTenant), /couldn’t attach/);

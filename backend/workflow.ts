@@ -40,8 +40,8 @@ export function canRescheduleInspection(visitStart: Date | null, now: number) {
   return visitStart !== null && visitStart.getTime() - now >= rescheduleNoticeMs;
 }
 
-export async function notify(db: PoolClient, target: string, body: string) {
-  await db.query('INSERT INTO outbox (target, body) VALUES ($1, $2)', [target, body]);
+export async function notify(db: PoolClient, target: string, body: string, sharedOrderId?: string) {
+  await db.query('INSERT INTO outbox (target, body, shared_order_id) VALUES ($1, $2, $3)', [target, body, sharedOrderId ?? null]);
 }
 export async function record(db: PoolClient, id: string, action: string, detail: string) {
   await db.query('INSERT INTO work_order_events (order_id, action, detail) VALUES ($1, $2, $3)', [id, action, detail]);
@@ -94,8 +94,6 @@ async function addReportPhoto(db: PoolClient, cfg: Config, tenant: string, order
 
 /** Returns the work-order id when this call filed a new report. */
 async function openReport(db: PoolClient, cfg: Config, handle: string, pending: Pending, point: Landmark, description: string, repair?: Repair): Promise<string | undefined> {
-  const prior = await db.query('SELECT 1 FROM reports WHERE message_id = $1', [pending.messageId]);
-  if (prior.rowCount) return;
   const related = await db.query<Order>(`
     SELECT w.id, w.status, w.access_key, w.inspection_key FROM work_orders w LEFT JOIN repair_contexts r ON r.order_id=w.id
     WHERE w.property_id = $1 AND w.zone_id = $2 AND w.status IN ('open', 'scheduled')
@@ -130,7 +128,7 @@ async function openReport(db: PoolClient, cfg: Config, handle: string, pending: 
       [order.id, subject, repair?.aid ?? null]);
   }
   await savePending(db, handle, {}, order.id);
-  await notify(db, handle, repair ? `${code(order.id)} logged. ${description.slice(0, 110)}\n${guidance[repair.aid]}\n${evidenceUrl}` : cfg.sponsorRehearsal && cfg.blenderRenderer
+  await notify(db, handle, repair ? `${code(order.id)} logged. ${description.slice(0, 110)}\n${guidance[repair.aid]}${cfg.reportPublish ? '' : `\n${evidenceUrl}`}` : cfg.sponsorRehearsal && cfg.blenderRenderer
     ? `Demo ${code(order.id)} is open. See the work order and 3D inspection schematic on this Mac: ${evidenceUrl}`
     : `${code(order.id)} is with your property manager. I’ll text you when there’s an inspection time.`);
   if (order.status === 'scheduled') {
@@ -140,11 +138,13 @@ async function openReport(db: PoolClient, cfg: Config, handle: string, pending: 
   }
   const photoReview = pending.photo && (!repair || repair.propertyMatch) ? photoReviewUrl(cfg, order, point.id) : undefined;
   if (repair) {
+    if (cfg.reportPublish) await notify(db, handle, `${code(order.id)} · Full repair report: ${evidenceUrl}`, order.id);
     await notify(db, cfg.manager, managerReport({
       code: code(order.id), address: repair.address, description, issue: repair.issue, aid: repair.aid,
       hasPhoto: !!pending.photo, photoReview, inspectionSummary: inspection?.summary, demo: cfg.demo || cfg.sponsorRehearsal || cfg.photonTest,
     }));
     if (pending.photo) await queueManagerPhoto(db, cfg.manager, report.id);
+    if (cfg.reportPublish) await notify(db, cfg.manager, `${code(order.id)} · Shared repair report: ${evidenceUrl}`, order.id);
     if (cfg.blenderRenderer) {
       await db.query("INSERT INTO outbox(target,body,render_order_id,is_render) VALUES($1,'',$2,true)", [handle, order.id]);
     }
@@ -370,6 +370,8 @@ export async function handleMessage(db: PoolClient, cfg: Config, message: Messag
     const { base64, type } = prepared.pending.photo;
     if (await addReportPhoto(db, cfg, handle, conversation.active_order, { bytes: Buffer.from(base64, 'base64'), type }, false)) return;
   }
+  if (prepared.pending.messageId &&
+      (await db.query('SELECT 1 FROM reports WHERE message_id=$1', [prepared.pending.messageId])).rowCount) return;
   if (prepared.agent?.kind === 'reply') {
     await savePending(db, handle, prepared.agent.awaitingDetails ? prepared.pending : {});
     return notify(db, handle, prepared.agent.message + (prepared.agent.awaitingDetails ? tagReminder : ''));

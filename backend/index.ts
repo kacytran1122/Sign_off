@@ -13,6 +13,7 @@ import { projectDamageOnRoof } from './roof-projection.js';
 import { damagePointInput } from './damage-point.js';
 import { startBlenderWorker } from './blender.js';
 import { startAreaWorker } from './area.js';
+import { reportSnapshot, startReportPublisher } from './report-publication.js';
 import { guidance, repairEffects, repairTimeZone, type Aid, type Issue } from './repair.js';
 import { activatePhotonMessage, downloadPhoto, listReceivedMessages, photoLimit, readMessage, RetryableError, sendText, verifyEvent, type PhotonConnection } from './photon.js';
 import { handleMessage, photoOrderReply, prepareReport, remindManager } from './workflow.js';
@@ -37,6 +38,7 @@ const db = new pg.Pool({ connectionString: cfg.databaseUrl, max: 6 });
 await db.query(await readFile('backend/db/schema.sql', 'utf8'));
 const stopBlender = cfg.blenderRenderer && startBlenderWorker(db, cfg.blenderRenderer);
 const stopArea = cfg.repairContext && startAreaWorker(db, cfg);
+const stopReports = cfg.repairContext && startReportPublisher(db, cfg);
 
 const app = new Hono();
 const verifier = cfg.webhookSecret ? new Webhook(cfg.webhookSecret) : undefined;
@@ -190,13 +192,14 @@ app.put('/api/work-orders/:key/photos/:id/damage-point', async (c) => {
 app.get('/api/reports/:key', async (c) => {
   const key = keySchema.safeParse(c.req.param('key'));
   if (!key.success) return c.notFound();
-  const { rows: [report] } = await db.query<{ id: string; status: string; issue: Issue; aid: Aid; area: unknown; renderStatus?: string }>(`
-    SELECT w.id,w.status,r.issue,r.aid,r.area,b.status AS "renderStatus"
+  const { rows: [report] } = await db.query<Parameters<typeof reportSnapshot>[1]>(`
+    SELECT w.id,w.status,r.issue,r.aid,r.area,r.property_match,b.status AS "renderStatus",photo.landmark_id AS "landmarkId"
     FROM work_orders w JOIN repair_contexts r ON w.id=r.order_id LEFT JOIN blender_renders b ON w.id=b.order_id
+    LEFT JOIN LATERAL (SELECT landmark_id FROM reports WHERE order_id=w.id ORDER BY id LIMIT 1) photo ON true
     WHERE w.access_key=$1 AND w.property_id=$2`, [key.data, cfg.property.id]);
   if (!report) return c.notFound();
   c.header('Cache-Control', 'private, no-store');
-  return c.json({ id: report.id, status: report.status, issue: report.issue, guidance: guidance[report.aid], effects: repairEffects(report.issue, report.aid), area: report.area, renderStatus: report.renderStatus });
+  return c.json(reportSnapshot(cfg.property, report));
 });
 app.get('/api/reports/:key/render', async (c) => {
   const key = keySchema.safeParse(c.req.param('key'));
@@ -355,6 +358,8 @@ async function tick() {
         WHERE o.status='queued' AND o.run_after <= now()
         AND (o.render_order_id IS NULL OR b.status='ready' OR (b.status='failed' AND NOT o.is_render))
         AND (o.photo_report_id IS NULL OR (o.target=$2 AND r.photo IS NOT NULL))
+        AND (o.shared_order_id IS NULL OR EXISTS (
+          SELECT 1 FROM report_publications p WHERE p.order_id=o.shared_order_id AND p.revision IS NOT NULL))
         AND COALESCE(c.photon_project,$1)=CASE WHEN o.target=$2 THEN $3 ELSE $1 END
         ORDER BY o.created_at LIMIT 5`, [cfg.photonProject, cfg.manager, connectionFor(cfg.manager).photonProject]);
       for (const job of rows) {
@@ -416,6 +421,7 @@ async function stop() {
   await work;
   if (stopBlender) await stopBlender();
   if (stopArea) await stopArea();
+  if (stopReports) await stopReports();
   await db.end();
   await frontend.close();
 }

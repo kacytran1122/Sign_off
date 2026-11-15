@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import type { Config } from './config.js';
 import { z } from 'zod';
 import { repairEffects, type Aid, type Issue } from './repair.js';
 
@@ -34,7 +35,7 @@ const areaSchema = z.object({
   history: z.array(z.object({ feelsLikeF: z.number() })).optional(),
   coverage: z.object({
     start_date: z.string(), through_date: z.string(),
-    indicators: z.object({ water: z.number(), waste: z.number() }),
+    indicators: z.object({ water: z.number(), waste: z.number(), rodentMentions: z.number().int().nonnegative().optional() }),
   }).optional(),
 });
 
@@ -59,6 +60,9 @@ export function tenantAreaReport(code: string, issue: Issue, aid: Aid, input: un
     'Indoor temperature and the cause of the damage still need to be checked on site.',
     coverage ? `Within 1 km, city 311 recorded ${coverage.indicators.water} water and ${coverage.indicators.waste} waste reports (${coverage.start_date} to ${coverage.through_date}).`
       : 'Nearby water and waste report counts are unavailable.',
+    coverage?.indicators.rodentMentions !== undefined
+      ? `Houston 311 includes ${coverage.indicators.rodentMentions} nearby reports that mention mice or rats in the same period.`
+      : '',
     'The available data does not establish whether mice or rats are at the building. Tell maintenance if you see rodents, droppings or gnaw marks.',
     repairEffects(issue, aid),
     url,
@@ -69,7 +73,7 @@ export function repairReportUrl(config: { reportShareOrigin?: string; baseUrl: s
   return config.reportShareOrigin ? `${config.reportShareOrigin}/reports/${key}` : `${config.baseUrl}/reports/${key}`;
 }
 
-export async function queueAreaNotices(db: Pool, config: { reportShareOrigin?: string; baseUrl: string }) {
+export async function queueAreaNotices(db: Pool, config: Pick<Config, 'reportShareOrigin' | 'baseUrl' | 'reportPublish'>) {
   const client = await db.connect();
   try {
     await client.query('BEGIN');
@@ -80,7 +84,7 @@ export async function queueAreaNotices(db: Pool, config: { reportShareOrigin?: s
       WHERE p.area_notice_pending AND r.updated_at IS NOT NULL ORDER BY p.id LIMIT 5 FOR UPDATE OF p SKIP LOCKED`);
     for (const report of rows) {
       const body = tenantAreaReport(`L-${report.order_id}`, report.issue, report.aid, report.area, repairReportUrl(config, report.access_key));
-      await client.query('INSERT INTO outbox(target, body) VALUES($1,$2)', [report.reporter, body]);
+      await client.query('INSERT INTO outbox(target, body, shared_order_id) VALUES($1,$2,$3)', [report.reporter, body, config.reportPublish ? report.order_id : null]);
       await client.query('UPDATE reports SET area_notice_pending=false WHERE id=$1', [report.id]);
     }
     await client.query('COMMIT');

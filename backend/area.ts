@@ -61,14 +61,30 @@ export const areaSchema = `
     latitude double precision NOT NULL, longitude double precision NOT NULL, PRIMARY KEY(city,ticket)
   );
   CREATE TABLE IF NOT EXISTS neighborhood_coverage (
-    city text PRIMARY KEY, start_date date NOT NULL, through_date date NOT NULL
-  );`;
+    city text PRIMARY KEY, start_date date NOT NULL, through_date date NOT NULL,
+    rodent_mentions boolean NOT NULL DEFAULT false
+  );
+  ALTER TABLE neighborhood_coverage ADD COLUMN IF NOT EXISTS rodent_mentions boolean NOT NULL DEFAULT false;`;
+
+export function readNeighborhoodCoverage(source: pg.Pool | pg.Client, city: string, latitude: number, longitude: number) {
+  return source.query<{ start_date: string; through_date: string; indicators: {
+    water: number; waste: number; rodentMentions?: number;
+  } }>(`
+    SELECT c.start_date::text, c.through_date::text, (SELECT jsonb_build_object(
+      'water',count(*) FILTER(WHERE r.kind='water'), 'waste',count(*) FILTER(WHERE r.kind='waste')) ||
+      CASE WHEN c.rodent_mentions THEN jsonb_build_object('rodentMentions',count(*) FILTER(WHERE r.kind='rodent_mention'))
+        ELSE '{}'::jsonb END
+      FROM neighborhood_events r WHERE r.city=c.city AND r.observed_on BETWEEN c.start_date AND c.through_date
+      AND power((r.latitude-$2)*111.2,2)+power((r.longitude-$3)*111.2*cos(radians($2)),2)<=1) AS indicators
+    FROM neighborhood_coverage c WHERE c.city=$1`, [city, latitude, longitude]);
+}
 
 export function startAreaWorker(db: pg.Pool, config: Config) {
   const tiger = config.tigerDatabaseUrl ? new pg.Pool({ connectionString: config.tigerDatabaseUrl, connectionTimeoutMillis: 3500, max: 2 }) : undefined;
   tiger?.on('error', () => console.warn('TigerData connection interrupted'));
   let task: Promise<void> | undefined;
   let models: z.infer<typeof modelSchema>[] = [];
+  let localPrepared = false;
   let tigerPrepared = false;
   const loadModel = readFile('backend/config/heat-models.json', 'utf8')
     .then((contents) => { models = z.array(modelSchema).parse(JSON.parse(contents)); }).catch(() => {});
@@ -95,7 +111,10 @@ export function startAreaWorker(db: pg.Pool, config: Config) {
         daily: 'apparent_temperature_max', forecast_days: '3', past_days: '1', timezone: 'auto' }).toString();
       const weather = await json(forecast).then((value) => weatherSchema.parse(value)).catch(() => undefined);
       let store = db;
-      await db.query(areaSchema);
+      if (!localPrepared) {
+        await db.query(areaSchema);
+        localPrepared = true;
+      }
       if (tiger) {
         try {
           if (!tigerPrepared) {
@@ -129,12 +148,7 @@ export function startAreaWorker(db: pg.Pool, config: Config) {
       const history = (await store.query<{ time: Date; feelsLikeF: number }>(`SELECT ${bucket} AS time, round(avg(feels_like_f)) AS "feelsLikeF"
         FROM neighborhood_samples WHERE latitude=$1 AND longitude=$2 AND observed_at >= now() - interval '24 hours'
         GROUP BY 1 ORDER BY 1`, [latitude, longitude]).catch(() => ({ rows: [] }))).rows;
-      const readCoverage = (source: pg.Pool) => source.query<{ start_date: string; through_date: string; indicators: { water: number; waste: number } }>(`
-        SELECT c.start_date::text, c.through_date::text, (SELECT json_build_object(
-          'water',count(*) FILTER(WHERE r.kind='water'), 'waste',count(*) FILTER(WHERE r.kind='waste')) FROM neighborhood_events r
-          WHERE r.city=c.city AND r.observed_on BETWEEN c.start_date AND c.through_date
-          AND power((r.latitude-$2)*111.2,2)+power((r.longitude-$3)*111.2*cos(radians($2)),2)<=1) AS indicators
-        FROM neighborhood_coverage c WHERE c.city=$1`, [city, latitude, longitude]);
+      const readCoverage = (source: pg.Pool) => readNeighborhoodCoverage(source, city, latitude, longitude);
       const coverage = city === 'LOS ANGELES' ? await losAngelesIndicators(latitude, longitude).catch(() => undefined)
         : (await readCoverage(store).catch(() => readCoverage(db))).rows[0]
           ?? (store === db ? undefined : (await readCoverage(db)).rows[0]);
