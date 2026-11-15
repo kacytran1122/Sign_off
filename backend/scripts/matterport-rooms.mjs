@@ -1,6 +1,7 @@
 const modelApi = 'https://api.matterport.com/api/models/graph';
 const query = `query RoomDimensions($modelId: ID!, $units: Units) {
   model(id: $modelId) {
+    id
     rooms {
       id
       label

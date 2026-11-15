@@ -22,11 +22,17 @@ const propertySchema = z.object({
     storiesAboveGrade: z.number().int().positive(),
     buildingType: z.string().min(1).optional(),
     buildingAreaSqFt: z.number().positive().optional(),
+    propertySubtype: z.string().min(1).optional(),
+    yearBuilt: z.number().int().min(1000).max(3000).optional(),
+    candidateStructures: z.number().int().positive().optional(),
+    matchedViewpoints: z.number().int().positive().optional(),
+    matchedRooms: z.number().int().positive().optional(),
   }).optional(),
   roof: z.object({
     imageUrl: z.url({ protocol: /^https$/ }).optional(),
     imageFile: z.string().regex(/^backend\/config\/roof-assets\/[A-Za-z0-9_-]+\.jpg$/).optional(),
     captureDate: z.string().optional(),
+    analysisDate: z.iso.date().optional(),
     outline: z.array(z.tuple([z.number(), z.number()])).min(3).optional(),
     projection: z.object({
       u: projectionAxis,
@@ -47,6 +53,12 @@ const propertySchema = z.object({
     aliases: z.array(z.string().min(1)).default([]),
     zoneId: z.string(),
     matterportRoomId: z.string().min(1).optional(),
+    roomEvidence: z.object({
+      areaSqFt: z.number().positive().optional(),
+      widthFt: z.number().positive().optional(),
+      depthFt: z.number().positive().optional(),
+      heightFt: z.number().positive().optional(),
+    }).optional(),
     anchor: vec3.optional(),
     stem: vec3.optional(),
     views: z.array(view).default([]),
@@ -142,6 +154,11 @@ export async function loadConfig(env = process.env) {
       throw new Error('Live property requires a Matterport model, landmark anchors and views, and a Vexcel roof image');
     }
   }
+  const reportShareOrigin = env.REPORT_SHARE_ORIGIN ? new URL(z.url({ protocol: /^https$/ }).parse(env.REPORT_SHARE_ORIGIN)).origin : undefined;
+  const reportPublish = env.REPORT_PUBLISH_TOKEN
+    ? { token: z.string().min(32).parse(env.REPORT_PUBLISH_TOKEN), origin: z.string().parse(reportShareOrigin) }
+    : undefined;
+
   return {
     demo, photonTest, sponsorRehearsal, photonPollSince, property, participants, manager, managerPhoton, baseUrl,
     port: z.coerce.number().int().min(1).max(65535).parse(env.PORT ?? '4310'),
@@ -153,7 +170,7 @@ export async function loadConfig(env = process.env) {
     blenderRenderer: env.BLENDER_RENDERER,
     repairContext: env.REPAIR_CONTEXT === 'true',
     agentMode,
-    reportShareOrigin: env.REPORT_SHARE_ORIGIN ? new URL(z.url({ protocol: /^https$/ }).parse(env.REPORT_SHARE_ORIGIN)).origin : undefined,
+    reportShareOrigin, reportPublish,
     tigerDatabaseUrl: env.TIGER_DATABASE_URL || undefined,
     nudgeSeconds: z.coerce.number().int().positive().parse(env.NUDGE_SECONDS ?? (demo ? 120 : 3600)),
   };

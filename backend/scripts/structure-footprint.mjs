@@ -36,6 +36,13 @@ export function matchStructure(features, model, landmarks, projected) {
   }
 
   const scans = new Set(model.locations.map(({ id }) => id));
+  const panoramas = new Map();
+  for (const scan of model.locations) {
+    for (const { id } of scan.panos ?? []) {
+      if (panoramas.has(id) && panoramas.get(id) !== scan) panoramas.set(id, undefined);
+      else if (!panoramas.has(id)) panoramas.set(id, scan);
+    }
+  }
   const locations = new Map();
   for (const { scan, point } of projected) {
     if (!scans.has(scan?.id) || !isGeoPoint(point)) continue;
@@ -48,21 +55,27 @@ export function matchStructure(features, model, landmarks, projected) {
 
   const rooms = new Set(model.rooms.map(({ id }) => id));
   const viewpoints = landmarks.map((landmark) => {
-    const sweep = landmark.views?.[0]?.sweep;
-    const matches = sweep ? model.locations.filter((scan) => scan.panos?.some((pano) => pano.id === sweep)) : [];
-    const [scan] = matches;
-    const sample = locations.get(scan?.id);
-    if (matches.length !== 1 || !sample || !rooms.has(scan.room?.id)) {
-      throw new Error('A saved viewpoint could not be matched to a projected Matterport room.');
+    const views = (landmark.views ?? []).map(({ sweep }) => {
+      const scan = panoramas.get(sweep);
+      const sample = locations.get(scan?.id);
+      if (!sample || !rooms.has(scan?.room?.id)) {
+        throw new Error('A saved viewpoint could not be matched to a projected Matterport room.');
+      }
+      return { point: sample.point, roomId: scan.room.id };
+    });
+    if (!views.length || new Set(views.map(({ roomId }) => roomId)).size !== 1) {
+      throw new Error('A landmark must use saved viewpoints from the same Matterport room.');
     }
-    return { point: sample.point, roomId: scan.room.id };
+    return { points: views.map(({ point }) => point), roomId: views[0].roomId };
   });
-  if (candidates.length > 1 && new Set(viewpoints.map(({ point }) => point.join(','))).size < 2) {
+  const points = viewpoints.flatMap((viewpoint) => viewpoint.points);
+  const distinctViewpoints = new Set(points.map((point) => point.join(','))).size;
+  if (candidates.length > 1 && distinctViewpoints < 2) {
     throw new Error('A shared parcel requires at least two distinct Matterport viewpoint positions.');
   }
 
   const matches = candidates.flatMap((ring, index) =>
-    viewpoints.length && viewpoints.every(({ point }) => insideFootprint(ring, point)) ? [index] : []);
+    points.length && points.every((point) => insideFootprint(ring, point)) ? [index] : []);
   if (matches.length !== 1) {
     throw new Error('Could not match a unique Vexcel footprint to all saved Matterport viewpoints.');
   }
@@ -70,6 +83,7 @@ export function matchStructure(features, model, landmarks, projected) {
   return {
     feature: features[index],
     viewpoints,
+    distinctViewpoints,
     samples: [...locations.values()].map((sample) => ({
       ...sample,
       inside: insideFootprint(candidates[index], sample.point),
