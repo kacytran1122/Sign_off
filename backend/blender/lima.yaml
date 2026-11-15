@@ -1,0 +1,13 @@
+vmType: vz
+images:
+  - location: https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-arm64.qcow2
+    arch: aarch64
+cpus: 4
+memory: 4GiB
+disk: 12GiB
+mounts: []
+ssh:
+  loadDotSSHPubKeys: false
+containerd:
+  system: false
+  user: false

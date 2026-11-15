@@ -1,0 +1,294 @@
+import type { PoolClient } from 'pg';
+import { identifyLeak } from './ai.js';
+import { normalizeHandle, type Config, type Landmark } from './config.js';
+import { type Message, type Photo } from './photon.js';
+import { formatVisit, looksLikeVisit, parseVisit, type Visit } from './schedule.js';
+import { belongsToProperty, guidance, repairTimeZone, reportAddress, safeAid, type Aid, type Issue } from './repair.js';
+import { managerReport, repairReportUrl } from './reports.js';
+
+type Pending = {
+  text?: string;
+  messageId?: string;
+  photo?: { base64: string; type: string };
+  choices?: string[];
+  proposedVisit?: Visit;
+  orderId?: string;
+  photoOrderId?: string;
+};
+type Order = { id: string; status: string; access_key: string };
+type Conversation = { active_order: string | null; pending: Pending };
+type Repair = { address: string; propertyMatch: boolean; issue: Issue; aid: Aid };
+const code = (id: string) => `L-${id}`;
+const photoOrderReply = /^(?:photo\s+)?L-([1-9]\d{0,12})$/i;
+
+export async function notify(db: PoolClient, target: string, body: string) {
+  await db.query('INSERT INTO outbox (target, body) VALUES ($1, $2)', [target, body]);
+}
+export async function record(db: PoolClient, id: string, action: string, detail: string) {
+  await db.query('INSERT INTO work_order_events (order_id, action, detail) VALUES ($1, $2, $3)', [id, action, detail]);
+}
+async function savePending(db: PoolClient, handle: string, pending: Pending, order?: string) {
+  await db.query('UPDATE conversations SET pending = $2, active_order = COALESCE($3,active_order) WHERE handle = $1',
+    [handle, JSON.stringify(pending), order ?? null]);
+}
+async function reporters(db: PoolClient, id: string): Promise<string[]> {
+  const { rows } = await db.query<{ reporter: string }>('SELECT DISTINCT reporter FROM reports WHERE order_id = $1', [id]);
+  return rows.map((row) => row.reporter);
+}
+
+async function queueManagerPhoto(db: PoolClient, manager: string, reportId: string) {
+  await db.query("INSERT INTO outbox(target,body,photo_report_id,created_at) VALUES($1,'',$2,clock_timestamp())",
+    [manager, reportId]);
+}
+
+async function addReportPhoto(db: PoolClient, cfg: Config, tenant: string, orderId: string, photo: Photo, explicit: boolean) {
+  const { rows: [report] } = await db.query<{ id: string }>(`
+    UPDATE reports SET photo=$3, photo_type=$4
+    WHERE photo IS NULL AND id=(SELECT r.id FROM reports r JOIN work_orders w ON w.id=r.order_id
+      WHERE r.order_id=$1 AND r.reporter=$2 AND r.photo IS NULL AND w.status IN ('open','scheduled')
+        AND ($5 OR r.created_at > now() - interval '90 seconds') ORDER BY r.id DESC LIMIT 1)
+    RETURNING id
+  `, [orderId, tenant, photo.bytes, photo.type, explicit]);
+  if (!report) return false;
+  await record(db, orderId, 'photo_added', 'Tenant added a photo to the report.');
+  if (cfg.repairContext) {
+    await notify(db, cfg.manager, `${code(orderId)} · The tenant added this photo to the report.`);
+    await queueManagerPhoto(db, cfg.manager, report.id);
+  }
+  await notify(db, tenant, `I attached the photo to ${code(orderId)}.`);
+  return true;
+}
+
+async function openReport(db: PoolClient, cfg: Config, handle: string, pending: Pending, point: Landmark, description: string, repair?: Repair) {
+  const prior = await db.query('SELECT 1 FROM reports WHERE message_id = $1', [pending.messageId]);
+  if (prior.rowCount) return;
+  const related = await db.query<Order>(`
+    SELECT w.id, w.status, w.access_key FROM work_orders w LEFT JOIN repair_contexts r ON r.order_id=w.id
+    WHERE w.property_id = $1 AND w.zone_id = $2 AND w.status IN ('open', 'scheduled')
+      AND w.created_at >= now() - interval '48 hours'
+      AND ($3::text IS NULL OR (lower(r.address)=lower($3) AND r.issue=$4 AND r.aid=$5))
+    ORDER BY w.id DESC LIMIT 1 FOR UPDATE OF w
+  `, [cfg.property.id, point.zoneId, repair?.address ?? null, repair?.issue ?? null, repair?.aid ?? null]);
+  const order = related.rows[0] ?? (await db.query<Order>(`
+    INSERT INTO work_orders (property_id, zone_id, status, next_nudge_at)
+    VALUES ($1, $2, 'open', now() + $3 * interval '1 second')
+    RETURNING id, status, access_key
+  `, [cfg.property.id, point.zoneId, cfg.nudgeSeconds])).rows[0];
+  const { rows: [report] } = await db.query<{ id: string }>(`INSERT INTO reports (order_id, message_id, reporter, landmark_id, description, photo, photo_type, area_notice_pending)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`, [
+    order.id, pending.messageId, handle, point.id, description,
+    pending.photo ? Buffer.from(pending.photo.base64, 'base64') : null, pending.photo?.type ?? null, !!repair,
+  ]);
+  if (repair) await db.query(`INSERT INTO repair_contexts(order_id,address,property_match,issue,aid) VALUES($1,$2,$3,$4,$5)
+    ON CONFLICT(order_id) DO NOTHING`, [order.id, repair.address, repair.propertyMatch, repair.issue, repair.aid]);
+  const area = repair && !repair.propertyMatch ? repair.address : cfg.sponsorRehearsal ? point.suite : `Suite ${point.suite}`;
+  await record(db, order.id, related.rowCount ? 'report_linked' : 'opened',
+    `${area} · ${point.label}${related.rowCount ? ' · Possible shared source' : ''}`);
+  const evidenceUrl = repair ? repairReportUrl(cfg, order.access_key) : `${cfg.baseUrl}/work-orders/${order.access_key}`;
+  if (cfg.blenderRenderer) {
+    const room = point.label.toLowerCase().split(' ')[0];
+    const subject = room === 'lobby' || room === 'warehouse' ? room : 'inspection';
+    await db.query('INSERT INTO blender_renders (order_id, subject, aid) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+      [order.id, subject, repair?.aid ?? null]);
+  }
+  await savePending(db, handle, {}, order.id);
+  await notify(db, handle, repair ? `${code(order.id)} logged. ${description.slice(0, 110)}\n${guidance[repair.aid]}\n${evidenceUrl}` : cfg.sponsorRehearsal && cfg.blenderRenderer
+    ? `Demo ${code(order.id)} is open. See the work order and 3D inspection schematic on this Mac: ${evidenceUrl}`
+    : `${code(order.id)} is with your property manager. I’ll text you when there’s an inspection time.`);
+  if (order.status === 'scheduled') {
+    const { rows } = await db.query<{ visit_start: Date; visit_end: Date }>('SELECT visit_start, visit_end FROM work_orders WHERE id=$1', [order.id]);
+    const visit = { start: rows[0].visit_start.toISOString(), end: rows[0].visit_end.toISOString() };
+    await notify(db, handle, `${code(order.id)} inspection: ${formatVisit(visit, repairTimeZone(repair?.address, cfg.property.timeZone))}.`);
+  }
+  if (repair) {
+    await notify(db, cfg.manager, managerReport({
+      code: code(order.id), address: repair.address, description, issue: repair.issue, aid: repair.aid,
+      hasPhoto: !!pending.photo, demo: cfg.demo || cfg.sponsorRehearsal || cfg.photonTest,
+    }));
+    if (pending.photo) await queueManagerPhoto(db, cfg.manager, report.id);
+    if (cfg.blenderRenderer) {
+      await db.query("INSERT INTO outbox(target,body,render_order_id,is_render) VALUES($1,'',$2,true)", [handle, order.id]);
+    }
+    return;
+  }
+  await notify(db, cfg.manager, [
+    cfg.sponsorRehearsal
+      ? `Demo ${code(order.id)} · ${related.rowCount ? 'Related leak report' : 'New leak report'}`
+      : `${code(order.id)} · ${related.rowCount ? 'Related leak report' : 'New leak report'} · ${cfg.property.name}, suite ${point.suite}`,
+    `Evidence: ${evidenceUrl}`,
+    'Reply with an inspection window, e.g. “Tuesday 2 to 4 PM”.',
+  ].join('\n'));
+}
+
+async function tenantUpdate(db: PoolClient, cfg: Config, handle: string, id: string, reopen: boolean) {
+  const { rows } = await db.query<Order & { issue: Issue | null }>(
+    'SELECT w.*, r.issue FROM work_orders w LEFT JOIN repair_contexts r ON r.order_id=w.id WHERE w.id=$1 FOR UPDATE OF w', [id]);
+  const order = rows[0];
+  const report = await db.query('SELECT 1 FROM reports WHERE order_id=$1 AND reporter=$2', [id, handle]);
+  if (!order || !report.rowCount || (reopen ? !['awaiting_confirmation', 'closed'].includes(order.status) : order.status !== 'awaiting_confirmation')) {
+    return notify(db, handle, `There’s no repair awaiting that reply for ${code(id)}.`);
+  }
+  if (reopen) {
+    await db.query(`UPDATE work_orders SET status='open', visit_start=NULL, visit_end=NULL,
+      next_nudge_at=now() + $2 * interval '1 second' WHERE id=$1`, [id, cfg.nudgeSeconds]);
+    await db.query('UPDATE reports SET confirmed_at=NULL WHERE order_id=$1', [id]);
+    const detail = order.issue === 'damage' ? 'Tenant reported that the damage remains.' : 'Tenant reported that the leak is continuing.';
+    await record(db, id, 'reopened', detail);
+    await notify(db, cfg.manager, `${code(id)} reopened. ${detail}${order.issue ? '' : ` ${cfg.baseUrl}/work-orders/${order.access_key}`}`);
+    return notify(db, handle, `${code(id)} is open again. I’ve let your property manager know.`);
+  }
+  const updated = await db.query('UPDATE reports SET confirmed_at=now() WHERE order_id=$1 AND reporter=$2 AND confirmed_at IS NULL', [id, handle]);
+  if (!updated.rowCount) return notify(db, handle, `Your confirmation for ${code(id)} is already recorded.`);
+  await record(db, id, 'tenant_confirmed', 'A tenant confirmed the repair.');
+  const remaining = await db.query('SELECT 1 FROM reports WHERE order_id=$1 AND confirmed_at IS NULL LIMIT 1', [id]);
+  if (remaining.rowCount) return notify(db, handle, `Thanks. Your confirmation for ${code(id)} is recorded.`);
+  await db.query("UPDATE work_orders SET status='closed' WHERE id=$1", [id]);
+  await record(db, id, 'closed', 'All reporting tenants confirmed the repair.');
+  for (const target of await reporters(db, id)) await notify(db, target, `${code(id)} is closed. Thanks for confirming the repair.`);
+  return notify(db, cfg.manager, `${code(id)} is closed. All reporting tenants confirmed the repair.`);
+}
+
+async function managerReply(db: PoolClient, cfg: Config, handle: string, message: Message, conversation: Conversation) {
+  const pending = conversation.pending;
+  const explicit = /\bL-([1-9]\d{0,12})\b/i.exec(message.text)?.[1];
+  const confirming = /^(yes|confirm)(?:\s+L-\d+)?[.!]?$/i.test(message.text);
+  const fixed = /^(fixed|marked fixed|the leak is fixed|repaired)(?:\s+L-\d+)?[.!]?$/i.test(message.text);
+  let id = explicit ?? (confirming ? pending.orderId : undefined);
+  if (!id && (fixed || looksLikeVisit(message.text))) {
+    const { rows } = await db.query<{ id: string }>(
+      "SELECT id FROM work_orders WHERE property_id=$1 AND status IN ('open','scheduled') ORDER BY id DESC LIMIT 2",
+      [cfg.property.id],
+    );
+    if (rows.length === 1) id = rows[0].id;
+  }
+  if (!id) return notify(db, handle, 'Include the ticket ID and an inspection window, e.g. “L-1 Tuesday 2 to 4 PM”, or reply “FIXED L-1”.');
+  const { rows } = await db.query<Order & { address?: string; time_zone?: string; issue?: Issue }>(`SELECT w.*, r.address, r.issue, r.area->>'timeZone' AS time_zone
+    FROM work_orders w LEFT JOIN repair_contexts r ON w.id=r.order_id WHERE w.id=$1 AND w.property_id=$2 FOR UPDATE OF w`, [id, cfg.property.id]);
+  if (!rows[0] || !['open', 'scheduled'].includes(rows[0].status)) {
+    return notify(db, handle, `${code(id)} has no open repair to update.`);
+  }
+  const zone = repairTimeZone(rows[0].address, cfg.property.timeZone, rows[0].time_zone);
+  if (fixed) {
+    await db.query("UPDATE work_orders SET status='awaiting_confirmation', next_nudge_at=NULL WHERE id=$1", [id]);
+    await record(db, id, 'repair_reported', 'Manager reported a repair. Asking tenants to verify.');
+    for (const tenant of await reporters(db, id)) {
+      const unresolved = rows[0].issue === 'damage' ? 'Still broken' : 'Still leaking';
+      await notify(db, tenant, `Your manager marked ${code(id)} repaired. Reply “Resolved ${code(id)}” or “${unresolved} ${code(id)}”.`);
+    }
+    return notify(db, handle, `I asked the affected tenants to verify ${code(id)}.`);
+  }
+  if (confirming && pending.orderId === id && pending.proposedVisit) {
+    if (new Date(pending.proposedVisit.start) <= new Date()) {
+      await savePending(db, handle, {});
+      return notify(db, handle, 'That window has passed. Send a new inspection window.');
+    }
+    const label = formatVisit(pending.proposedVisit, zone);
+    await db.query(`UPDATE work_orders SET status='scheduled', next_nudge_at=NULL, visit_start=$2, visit_end=$3 WHERE id=$1`,
+      [id, pending.proposedVisit.start, pending.proposedVisit.end]);
+    await record(db, id, 'scheduled', label);
+    await savePending(db, handle, {});
+    for (const tenant of await reporters(db, id)) await notify(db, tenant, `${code(id)} inspection confirmed for ${label}.`);
+    return notify(db, handle, `Confirmed ${code(id)} for ${label}. I texted the affected tenants.`);
+  }
+  const visit = parseVisit(message.text, zone);
+  if (visit) {
+    await savePending(db, handle, { orderId: id, proposedVisit: visit });
+    return notify(db, handle, `Schedule ${code(id)} for ${formatVisit(visit, zone)}? Reply YES to confirm.`);
+  }
+  return notify(db, handle, 'Send a window such as “Tuesday 2 to 4 PM”. For morning hours, include AM.');
+}
+
+const tenantStatusReply = /^(still leaking|still broken|resolved)(?:\s+L-([1-9]\d{0,12}))?[.!]?$/i;
+
+export async function prepareReport(db: PoolClient, cfg: Config, message: Message, photo?: Photo) {
+  const handle = normalizeHandle(message.handle);
+  const participant = cfg.participants.get(handle);
+  if (participant?.role !== 'tenant') return;
+  if (/^start[.!]?$/i.test(message.text) || tenantStatusReply.test(message.text)) return;
+  if (!photo && ((message.attachmentId && !message.text) || photoOrderReply.test(message.text))) return;
+  const landmarks = cfg.property.landmarks.filter((point) => point.suite === participant.suite);
+  const { rows } = await db.query<{ pending: Pending }>('SELECT pending FROM conversations WHERE handle=$1', [handle]);
+  const prior = rows[0]?.pending ?? {};
+  const orderForPhoto = photoOrderReply.exec(message.text)?.[1] ?? prior.photoOrderId;
+  if (orderForPhoto && photo) return { orderPhoto: { orderId: orderForPhoto, photo } };
+  const picked = prior.choices && /^\d+$/.test(message.text) ? prior.choices[Number(message.text) - 1] : undefined;
+  const mergedPhoto = photo ?? (prior.photo && { bytes: Buffer.from(prior.photo.base64, 'base64'), type: prior.photo.type });
+  const text = [prior.text, picked ? '' : message.text].filter(Boolean).join('\n').slice(-2000);
+  const pending: Pending = {
+    text, messageId: prior.messageId ?? message.id,
+    photo: mergedPhoto && { base64: mergedPhoto.bytes.toString('base64'), type: mergedPhoto.type },
+  };
+  const interpreted = await identifyLeak(cfg, text, mergedPhoto, landmarks);
+  return { pending, interpreted, landmarks, point: landmarks.find((point) => point.id === picked) ?? interpreted.landmark };
+}
+
+export async function handleMessage(db: PoolClient, cfg: Config, message: Message,
+  prepared: Awaited<ReturnType<typeof prepareReport>>, photonProject?: string) {
+  const handle = normalizeHandle(message.handle);
+  const participant = cfg.participants.get(handle);
+  if (!participant) return;
+  const { rows } = await db.query<Conversation>(`
+    INSERT INTO conversations (handle, space_id, agent_id, photon_project) VALUES ($1,$2,$3,$4)
+    ON CONFLICT (handle) DO UPDATE SET space_id=EXCLUDED.space_id, agent_id=EXCLUDED.agent_id,
+      photon_project=EXCLUDED.photon_project
+    RETURNING active_order, pending
+  `, [handle, message.space, message.agent, photonProject ?? null]);
+  const conversation = rows[0];
+  if (/^start[.!]?$/i.test(message.text)) {
+    return notify(db, handle, participant.role === 'tenant'
+      ? cfg.repairContext ? 'Send a photo, the street address and the room where you see the damage.' : 'Send a photo and tell me where you see the leak.'
+      : 'You’re connected. I’ll text you about new work orders.');
+  }
+  if (participant.role === 'manager') return managerReply(db, cfg, handle, message, conversation);
+  const update = tenantStatusReply.exec(message.text);
+  if (update) {
+    const id = update[2] ?? conversation.active_order;
+    if (id) return tenantUpdate(db, cfg, handle, id, update[1].toLowerCase() !== 'resolved');
+    return notify(db, handle, 'Include the work-order ID so I can find the repair.');
+  }
+  const requestedPhotoOrder = photoOrderReply.exec(message.text)?.[1];
+  if (requestedPhotoOrder && !prepared && !message.attachmentId) {
+    await savePending(db, handle, { ...conversation.pending, photoOrderId: requestedPhotoOrder });
+    return notify(db, handle, `Send the photo for ${code(requestedPhotoOrder)} now.`);
+  }
+  if (!prepared) return notify(db, handle, 'Send a JPG, PNG, or WebP under 4 MB, or describe the issue in a text.');
+  if (prepared.orderPhoto) {
+    const { orderId, photo } = prepared.orderPhoto;
+    const { photoOrderId, ...remaining } = conversation.pending;
+    if (photoOrderId) await savePending(db, handle, remaining);
+    if (await addReportPhoto(db, cfg, handle, orderId, photo, true)) return;
+    return notify(db, handle, `I couldn’t attach a photo to ${code(orderId)}. Check the work-order number or whether it already has a photo.`);
+  }
+  if (!message.text && !conversation.pending.messageId && prepared.pending.photo && conversation.active_order) {
+    const { base64, type } = prepared.pending.photo;
+    if (await addReportPhoto(db, cfg, handle, conversation.active_order, { bytes: Buffer.from(base64, 'base64'), type }, false)) return;
+  }
+  const { interpreted } = prepared;
+  if (!interpreted.isLeak && !(cfg.repairContext && interpreted.isDamage)) {
+    await savePending(db, handle, {});
+    return notify(db, handle, cfg.repairContext ? 'What is broken, and where is it in the building?' : 'Tell me what water, staining, or dripping you noticed and where.');
+  }
+  let repair: Repair | undefined;
+  if (cfg.repairContext) {
+    const address = reportAddress(prepared.pending.text ?? '');
+    if (!address) {
+      await savePending(db, handle, prepared.pending);
+      const visible = interpreted.visibleAddress && reportAddress(interpreted.visibleAddress);
+      return notify(db, handle, visible ? `I can read ${visible} in the photo. Please confirm the street address, city and state.`
+        : 'What’s the full street address, city and state?');
+    }
+    const issue = interpreted.isDamage ? 'damage' : 'leak';
+    const propertyMatch = belongsToProperty(address, cfg.property.address);
+    repair = { address, propertyMatch, issue, aid: safeAid(`${prepared.pending.text} ${interpreted.description}`, issue, interpreted.temporaryAid) };
+    if (!propertyMatch || issue === 'damage') {
+      const point = prepared.point ?? { id: 'reported-location', suite: participant.suite!, label: 'Reported area', zoneId: 'reported', aliases: [], views: [] };
+      return openReport(db, cfg, handle, prepared.pending, point, interpreted.description, repair);
+    }
+  }
+  if (!prepared.point) {
+    const { landmarks, pending } = prepared;
+    await savePending(db, handle, { ...pending, choices: landmarks.map((point) => point.id) });
+    return notify(db, handle, `Where do you see it? Reply with a number.\n${landmarks.map((point, i) => `${i + 1}. ${point.label}`).join('\n')}`);
+  }
+  return openReport(db, cfg, handle, prepared.pending, prepared.point, prepared.interpreted.description, repair);
+}

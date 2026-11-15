@@ -1,0 +1,27 @@
+node_modules
+.next
+.vercel
+dist
+.env
+.env.*
+!.env.example
+.ledger.json
+*.log
+.DS_Store
+
+# service account keys and other secrets
+backend/secrets/
+*.json.key
+
+# Build, test, and local demo files
+build/
+playwright-report/
+test-results/
+__pycache__/
+.fix-this-spot/
+backend/config/property.local.json
+backend/config/roof-assets/
+.claude/
+CLAUDE*.md
+.codex/
+AGENTS.md

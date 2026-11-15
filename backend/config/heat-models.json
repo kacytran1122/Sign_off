@@ -1,0 +1,30 @@
+[
+  {
+    "city": "Houston",
+    "trainedThrough": "2024-12-31",
+    "holdout": "2025",
+    "holdoutMae": 6.957,
+    "samples": 2557,
+    "coefficients": [
+      82.1545601,
+      -6.3039105,
+      -19.9833889,
+      1.181232,
+      -1.0902187
+    ]
+  },
+  {
+    "city": "Los Angeles",
+    "trainedThrough": "2024-12-31",
+    "holdout": "2025",
+    "holdoutMae": 5.932,
+    "samples": 2557,
+    "coefficients": [
+      76.4747162,
+      -8.5200766,
+      -14.0433412,
+      2.5486108,
+      -0.8098988
+    ]
+  }
+]

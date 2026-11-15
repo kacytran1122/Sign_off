@@ -1,0 +1,37 @@
+{
+  "id": "COSTAR-PROPERTY-ID",
+  "name": "Property name from CoStar",
+  "address": "Property address from CoStar",
+  "timeZone": "America/Chicago",
+  "matterportModel": "ReplaceWithModelId",
+  "roof": {
+    "imageUrl": "https://example.invalid/authorized-vexcel-crop.jpg",
+    "attributes": []
+  },
+  "zones": [
+    { "id": "roof-west", "label": "West roof", "polygon": [[0.15,0.18],[0.40,0.18],[0.40,0.79],[0.15,0.79]] },
+    { "id": "roof-east", "label": "East roof", "polygon": [[0.67,0.18],[0.86,0.18],[0.86,0.79],[0.67,0.79]] }
+  ],
+  "landmarks": [
+    {
+      "id": "conference-window",
+      "suite": "402",
+      "label": "Conference room window",
+      "aliases": ["conference", "meeting room"],
+      "zoneId": "roof-west",
+      "anchor": { "x": 0, "y": 0, "z": 0 },
+      "stem": { "x": 0, "y": -0.25, "z": 0 },
+      "views": [{ "sweep": "ReplaceWithSweepId", "rotation": { "x": 0, "y": 0 } }]
+    },
+    {
+      "id": "reception-window",
+      "suite": "402",
+      "label": "Reception window",
+      "aliases": ["reception", "front desk"],
+      "zoneId": "roof-east",
+      "anchor": { "x": 0, "y": 0, "z": 0 },
+      "stem": { "x": 0, "y": -0.25, "z": 0 },
+      "views": [{ "sweep": "ReplaceWithSweepId", "rotation": { "x": 0, "y": 0 } }]
+    }
+  ]
+}

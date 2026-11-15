@@ -1,0 +1,16 @@
+{
+  "id": "DEMO-001",
+  "name": "Juniper Exchange",
+  "address": "Fictional property for the local rehearsal",
+  "timeZone": "America/Chicago",
+  "roof": {},
+  "zones": [
+    { "id": "west-roof", "label": "West roof edge", "polygon": [[0.15,0.18],[0.4,0.18],[0.4,0.79],[0.15,0.79]] },
+    { "id": "east-roof", "label": "East roof edge", "polygon": [[0.67,0.18],[0.86,0.18],[0.86,0.79],[0.67,0.79]] }
+  ],
+  "landmarks": [
+    { "id": "conference-window", "suite": "402", "label": "Conference room window", "aliases": ["conference", "meeting room"], "zoneId": "west-roof", "diagramPoint": [0.23,0.31] },
+    { "id": "reception-window", "suite": "402", "label": "Reception window", "aliases": ["reception", "front desk"], "zoneId": "east-roof", "diagramPoint": [0.77,0.3] },
+    { "id": "studio-window", "suite": "403", "label": "Studio west window", "aliases": ["studio"], "zoneId": "west-roof", "diagramPoint": [0.23,0.69] }
+  ]
+}
