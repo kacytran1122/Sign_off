@@ -22,6 +22,11 @@ type Conversation = { active_order: string | null; pending: Pending };
 type Repair = { address: string; propertyMatch: boolean; issue: Issue; aid: Aid };
 const code = (id: string) => `L-${id}`;
 const photoOrderReply = /^(?:photo\s+)?L-([1-9]\d{0,12})$/i;
+const rescheduleNoticeMs = 72 * 60 * 60 * 1000;
+
+export function canRescheduleInspection(visitStart: Date | null, now: number) {
+  return visitStart !== null && visitStart.getTime() - now >= rescheduleNoticeMs;
+}
 
 export async function notify(db: PoolClient, target: string, body: string) {
   await db.query('INSERT INTO outbox (target, body) VALUES ($1, $2)', [target, body]);
@@ -173,40 +178,52 @@ async function managerReply(db: PoolClient, cfg: Config, handle: string, message
     if (rows.length === 1) id = rows[0].id;
   }
   if (!id) return notify(db, handle, 'Include the ticket ID and an inspection window, e.g. “L-1 Tuesday 2 to 4 PM”, or reply “FIXED L-1”.');
-  const { rows } = await db.query<Order & { address?: string; time_zone?: string; issue?: Issue }>(`SELECT w.*, r.address, r.issue, r.area->>'timeZone' AS time_zone
+  const { rows: [order] } = await db.query<Order & { address?: string; time_zone?: string; issue?: Issue; visit_start: Date | null; visit_end: Date | null }>(`SELECT w.*, r.address, r.issue, r.area->>'timeZone' AS time_zone
     FROM work_orders w LEFT JOIN repair_contexts r ON w.id=r.order_id WHERE w.id=$1 AND w.property_id=$2 FOR UPDATE OF w`, [id, cfg.property.id]);
-  if (!rows[0] || !['open', 'scheduled'].includes(rows[0].status)) {
+  if (!order || !['open', 'scheduled'].includes(order.status)) {
     return notify(db, handle, `${code(id)} has no open repair to update.`);
   }
-  const zone = repairTimeZone(rows[0].address, cfg.property.timeZone, rows[0].time_zone);
+  const zone = repairTimeZone(order.address, cfg.property.timeZone, order.time_zone);
   if (fixed) {
     await db.query("UPDATE work_orders SET status='awaiting_confirmation', next_nudge_at=NULL WHERE id=$1", [id]);
     await record(db, id, 'repair_reported', 'Manager reported a repair. Asking tenants to verify.');
     for (const tenant of await reporters(db, id)) {
-      const unresolved = rows[0].issue === 'damage' ? 'Still broken' : 'Still leaking';
+      const unresolved = order.issue === 'damage' ? 'Still broken' : 'Still leaking';
       await notify(db, tenant, `Your manager marked ${code(id)} repaired. Reply “Resolved ${code(id)}” or “${unresolved} ${code(id)}”.`);
     }
     return notify(db, handle, `I asked the affected tenants to verify ${code(id)}.`);
   }
-  if (confirming && pending.orderId === id && pending.proposedVisit) {
-    if (new Date(pending.proposedVisit.start) <= new Date()) {
-      await savePending(db, handle, {});
-      return notify(db, handle, 'That window has passed. Send a new inspection window.');
-    }
-    const label = formatVisit(pending.proposedVisit, zone);
-    await db.query(`UPDATE work_orders SET status='scheduled', next_nudge_at=NULL, visit_start=$2, visit_end=$3 WHERE id=$1`,
-      [id, pending.proposedVisit.start, pending.proposedVisit.end]);
-    await record(db, id, 'scheduled', label);
-    await savePending(db, handle, {});
-    for (const tenant of await reporters(db, id)) await notify(db, tenant, `${code(id)} inspection confirmed for ${label}.`);
-    return notify(db, handle, `Confirmed ${code(id)} for ${label}. I texted the affected tenants.`);
+  const confirmation = confirming && pending.orderId === id ? pending.proposedVisit : undefined;
+  const visit = confirmation ?? parseVisit(message.text, zone);
+  if (!visit) return notify(db, handle, 'Send a window such as “Tuesday 2 to 4 PM”. For morning hours, include AM.');
+
+  const now = Date.now();
+  const rescheduling = order.status === 'scheduled';
+  if (rescheduling && !canRescheduleInspection(order.visit_start, now)) {
+    if (pending.orderId === id) await savePending(db, handle, {});
+    return notify(db, handle, `Rescheduling ${code(id)} requires at least 72 hours before the scheduled start.`);
   }
-  const visit = parseVisit(message.text, zone);
-  if (visit) {
+  const label = formatVisit(visit, zone);
+  if (rescheduling && order.visit_start?.getTime() === Date.parse(visit.start) &&
+      order.visit_end?.getTime() === Date.parse(visit.end)) {
+    if (pending.orderId === id) await savePending(db, handle, {});
+    return notify(db, handle, `${code(id)} is already scheduled for ${label}.`);
+  }
+  if (!confirmation) {
     await savePending(db, handle, { orderId: id, proposedVisit: visit });
-    return notify(db, handle, `Schedule ${code(id)} for ${formatVisit(visit, zone)}? Reply YES to confirm.`);
+    return notify(db, handle, `${rescheduling ? 'Reschedule' : 'Schedule'} ${code(id)} for ${label}? Reply YES to confirm.`);
   }
-  return notify(db, handle, 'Send a window such as “Tuesday 2 to 4 PM”. For morning hours, include AM.');
+  if (Date.parse(visit.start) <= now) {
+    await savePending(db, handle, {});
+    return notify(db, handle, 'That window has passed. Send a new inspection window.');
+  }
+  await db.query(`UPDATE work_orders SET status='scheduled', next_nudge_at=NULL, visit_start=$2, visit_end=$3 WHERE id=$1`,
+    [id, visit.start, visit.end]);
+  await record(db, id, 'scheduled', rescheduling ? `Rescheduled to ${label}` : label);
+  await savePending(db, handle, {});
+  const action = rescheduling ? 'Rescheduled' : 'Confirmed';
+  for (const tenant of await reporters(db, id)) await notify(db, tenant, `${code(id)} inspection ${action.toLowerCase()} for ${label}.`);
+  return notify(db, handle, `${action} ${code(id)} for ${label}. I texted the affected tenants.`);
 }
 
 const tenantStatusReply = /^(still leaking|still broken|resolved)(?:\s+L-([1-9]\d{0,12}))?[.!]?$/i;

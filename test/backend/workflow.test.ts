@@ -15,6 +15,7 @@ import { Webhook } from 'standardwebhooks';
 import { readMessage, sendText, verifyEvent } from '../../backend/photon.js';
 import { belongsToProperty, repairTimeZone, reportAddress, safeAid } from '../../backend/repair.js';
 import { managerReport, tenantAreaReport } from '../../backend/reports.js';
+import { canRescheduleInspection } from '../../backend/workflow.js';
 
 async function port() {
   const listener = createServer();
@@ -25,6 +26,15 @@ async function port() {
   await new Promise<void>((resolve) => listener.close(() => resolve()));
   return address.port;
 }
+
+test('inspection rescheduling accepts exactly 72 hours of notice', () => {
+  const now = Date.parse('2026-11-01T09:30:00Z');
+  const cutoff = Date.parse('2026-11-04T09:30:00Z');
+  assert.equal(canRescheduleInspection(new Date(cutoff - 1), now), false);
+  assert.equal(canRescheduleInspection(new Date(cutoff), now), true);
+  assert.equal(canRescheduleInspection(new Date(cutoff + 1), now), true);
+  assert.equal(canRescheduleInspection(null, now), false);
+});
 
 test('the sponsor rehearsal accepts roof imagery in the backend folder', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'signoff-config-'));
@@ -198,7 +208,8 @@ test('photo, clarification, duplicate delivery, scheduling, and repair reopening
       });
       assert.equal(response.status, 202);
     }
-    type Ticket = { id: string; status: string; zoneId: string; reports: { id: string; has_photo: boolean }[];
+    type Ticket = { id: string; status: string; zoneId: string; visitStart: string | null; visitEnd: string | null;
+      reports: { id: string; has_photo: boolean }[];
       timeline: { action: string }[] };
     const pixel = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aVx8AAAAASUVORK5CYII=';
     await Promise.all([
@@ -225,6 +236,57 @@ test('photo, clarification, duplicate delivery, scheduling, and repair reopening
     assert.equal((await ticket()).status, 'open');
     await send('confirm', 'manager', 'YES');
     await wait(async () => { const t = await ticket(); return t.status === 'scheduled' ? t : undefined; });
+    await t.test('manager rescheduling rechecks notice and notifies tenants once', async () => {
+      const proposedOn = DateTime.now().setZone(fixture.timeZone).plus({ days: 6 }).startOf('day').set({ hour: 14 });
+      const proposal = `L-${order.id} ${proposedOn.toISODate()} 2 to 4 PM`;
+      const blocked = 'requires at least 72 hours before the scheduled start';
+      const messagesContaining = async (text: string) => (await snapshot()).messages.filter((m) => m.body.includes(text));
+      const original = await ticket();
+      await send('late-proposal', 'manager', proposal);
+      await wait(async () => (await messagesContaining(blocked)).length === 1 || undefined);
+      assert.equal((await ticket()).visitStart, original.visitStart);
+
+      const client = new pg.Client({ connectionString: databaseUrl });
+      await client.connect();
+      const moveCurrentWindow = (hours: number) => client.query(`UPDATE work_orders SET
+        visit_start=now()+$2::integer*interval '1 hour',
+        visit_end=now()+($2::integer+2)*interval '1 hour' WHERE id=$1`, [order.id, hours]);
+      try {
+        await moveCurrentWindow(96);
+        await send('early-proposal', 'manager', proposal);
+        await wait(async () => (await messagesContaining(`Reschedule L-${order.id}`)).length === 1 || undefined);
+        await moveCurrentWindow(71);
+        const near = await ticket();
+        await send('late-confirmation', 'manager', `YES L-${order.id}`);
+        await wait(async () => (await messagesContaining(blocked)).length === 2 || undefined);
+        const afterBlock = await ticket();
+        assert.equal(afterBlock.status, 'scheduled');
+        assert.equal(afterBlock.visitStart, near.visitStart);
+        assert.equal(afterBlock.visitEnd, near.visitEnd);
+        assert.equal(afterBlock.timeline.filter((event) => event.action === 'scheduled').length, 1);
+        assert.equal((await messagesContaining('inspection rescheduled for')).length, 0);
+
+        await moveCurrentWindow(96);
+        await send('valid-proposal', 'manager', proposal);
+        await wait(async () => (await messagesContaining(`Reschedule L-${order.id}`)).length === 2 || undefined);
+        await send('valid-confirmation', 'manager', `YES L-${order.id}`);
+        const updated = await wait(async () => {
+          const view = await ticket();
+          return view.visitStart === proposedOn.toJSDate().toISOString() ? view : undefined;
+        });
+        assert.equal(updated.status, 'scheduled');
+        assert.equal(updated.visitEnd, proposedOn.plus({ hours: 2 }).toJSDate().toISOString());
+        assert.equal(updated.timeline.filter((event) => event.action === 'scheduled').length, 2);
+        assert.deepEqual((await messagesContaining('inspection rescheduled for')).map((m) => m.target).sort(),
+          ['tenant2@demo.invalid', 'tenant@demo.invalid']);
+
+        await send('same-window', 'manager', proposal);
+        await wait(async () => (await messagesContaining('is already scheduled for')).length === 1 || undefined);
+        assert.equal((await messagesContaining('inspection rescheduled for')).length, 2);
+      } finally {
+        await client.end();
+      }
+    });
     await send('fix', 'manager', `FIXED L-${order.id}`);
     await wait(async () => { const t = await ticket(); return t.status === 'awaiting_confirmation' ? t : undefined; });
     await send('still', 'tenant', 'Still leaking');
