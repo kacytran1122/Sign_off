@@ -26,8 +26,8 @@ export default function Landing({ previewOnly = false }: { previewOnly?: boolean
     <header className={styles.header}>
       <nav className={`${styles.wrap} ${styles.navigation}`} aria-label="Main navigation">
         <BrandLink />
-        <div className={styles.navLinks}><a href="#verification">Tenant signoff</a></div>
-        <a className={styles.primary} href={destination}>{previewOnly ? 'See the repair' : 'Get started'} <Arrow /></a>
+        <div className={styles.navLinks}><a href="#verification">Tenant signoff</a>{!previewOnly && <Link href="/saved-reports">Sign in</Link>}</div>
+        <a className={styles.primary} href={previewOnly ? '/saved-reports' : destination}>{previewOnly ? 'Sign in' : 'Get started'} <Arrow /></a>
       </nav>
     </header>
     <main id="content" tabIndex={-1}>
