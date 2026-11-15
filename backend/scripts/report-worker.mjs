@@ -443,11 +443,13 @@ function matterportView(building) {
   const model = building?.publicMatterportModel;
   if (!model || !publicModelId.test(model)) return '';
   const url = `https://my.matterport.com/show/?m=${model}&amp;play=1`;
-  return `<details class="card property-view">
-    <summary>Explore the property in 3D</summary>
+  return `<section class="card property-view" id="matterport-view" aria-labelledby="matterport-heading">
+    <div class="property-view-heading">
+      <h2 id="matterport-heading">Explore the property in 3D</h2>
+      <a href="${url}" target="_blank" rel="noreferrer">Open in Matterport</a>
+    </div>
     <iframe title="Matterport 3D property scan" src="${url}" loading="lazy" referrerpolicy="no-referrer" allow="fullscreen"></iframe>
-    <p class="muted"><a href="${url}" target="_blank" rel="noreferrer">Open in Matterport</a></p>
-  </details>`;
+  </section>`;
 }
 
 function inspectionDecision(assessment, aid) {
@@ -490,7 +492,6 @@ function buildingContent(building, report) {
         ['Roof analysis', building.analysisDate],
       ], `${building.roofEvidence?.length ? `<ul class="evidence-notes">${building.roofEvidence.map((line) => `<li>${esc(line)}</li>`).join('')}</ul>` : ''}<p class="muted attribution">Matched Vexcel aerial imagery</p>`) : ''}
     </div>
-    ${matterportView(building)}
     ${linkedOverhead && building.inspectionSteps?.length ? `<section class="card path-card"><h3>Suggested inspection path</h3><ol>${building.inspectionSteps.map((step) => `<li>${esc(step)}</li>`).join('')}</ol><p class="muted">The property record, interior scan, and aerial capture guide where to look. A site visit can verify the source.</p></section>` : ''}
   </section>`;
 }
@@ -511,6 +512,7 @@ header{background:#fffcfa;border-bottom:1px solid #ebdde4}nav{display:flex;align
 .hero p{color:#632f4f;font-size:.85rem;font-weight:650;letter-spacing:.04em}.hero h1{margin:.32rem 0 .75rem}
 .badge{display:inline-block;border:1px solid #d9c2d0;border-radius:999px;padding:.22rem .67rem;background:#fffaf5;color:#61314d;font-size:.82rem;font-weight:650}
 .badge.closed{color:#245848;background:#edf4e9;border-color:#c9dccb}
+.hero-actions{display:flex;align-items:center;flex-wrap:wrap;gap:.75rem}.hero-actions a{font-size:.88rem;font-weight:650}
 main{padding-block:clamp(1.45rem,4vw,3rem)}
 .section{margin-top:clamp(2rem,5.5vw,4rem)}.section-title{margin:0 0 1rem}.section-title .muted{margin-top:.28rem}
 .card{min-width:0;border:1px solid #e9dce3;border-radius:1.1rem;background:#fffcfa;padding:clamp(1rem,2.7vw,1.75rem);box-shadow:0 3px 11px #41223508}
@@ -542,8 +544,9 @@ main{padding-block:clamp(1.45rem,4vw,3rem)}
 .rodent-card caption{text-align:left;font-weight:650;padding:0 0 .35rem}.rodent-card td,.rodent-card th{padding:.4rem .5rem;border-bottom:1px solid #eee3eb}.rodent-card tbody th{font-weight:400}.rodent-card td,.rodent-card th:last-child{text-align:right}
 .satellite-card{margin-bottom:.9rem}
 .satellite-map{display:block;width:100%;height:clamp(24rem,44vw,39rem);border:0;border-radius:.65rem;background:#f4edef;margin-top:.72rem}
-.property-view{margin-top:.9rem}.property-view summary{cursor:pointer;font-weight:650;color:#632c50}
-.property-view iframe{display:block;width:100%;height:clamp(19rem,40vw,34rem);border:0;border-radius:.65rem;background:#231721;margin:.75rem 0}
+.property-view{margin-top:1.4rem;scroll-margin-top:1rem}
+.property-view-heading{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.6rem 1rem}.property-view-heading a{font-size:.87rem;font-weight:650}
+.property-view iframe{display:block;width:100%;height:clamp(19rem,40vw,34rem);border:0;border-radius:.65rem;background:#231721;margin-top:.9rem}
 .assessment-card{margin-top:1rem;background:linear-gradient(135deg,#f4e5ef,#fffcfa 72%)}.assessment-card h2{margin-bottom:.7rem}
 footer{padding:0 0 2rem;color:#614e5d;font-size:.83rem}
 @media(max-width:730px){.action-grid,.chart-grid{grid-template-columns:minmax(0,1fr)}.shell{width:calc(100% - 1.3rem)}.chart-ticks text{font-size:23px}}
@@ -555,8 +558,9 @@ function reportMarkup(report, { navigationHref, navigationLabel, reference, rend
   const title = scenario?.title ?? precaution?.title ?? (report.issue === 'leak' ? 'Water leak' : 'Building damage');
   const action = precaution?.action ?? 'Temporary protection';
   const model = (report.aid !== 'clear' && scenario?.model) || precaution?.model || 'Temporary protection for the reported condition';
+  const viewer = matterportView(report.building);
   const html = `<header><nav class="shell" aria-label="Signoff"><span class="mark">Signoff</span><a class="refresh" href="${esc(navigationHref)}">${esc(navigationLabel)}</a></nav></header>
-    <section class="hero"><div class="shell"><p>${esc(reference)}</p><h1>${title}</h1><span class="badge ${report.status === 'closed' ? 'closed' : ''}">${states[report.status]}</span></div></section>
+    <section class="hero"><div class="shell"><p>${esc(reference)}</p><h1>${title}</h1><div class="hero-actions"><span class="badge ${report.status === 'closed' ? 'closed' : ''}">${states[report.status]}</span>${viewer ? '<a href="#matterport-view">View building in 3D</a>' : ''}</div></div></section>
     <main class="shell">
       <div class="action-grid">
         <section class="card action-card" aria-labelledby="action"><h2 id="action">${action}</h2><p>${esc(report.guidance)}</p>
@@ -567,7 +571,7 @@ function reportMarkup(report, { navigationHref, navigationLabel, reference, rend
           <figcaption><strong>3D reference model</strong>${report.renderStatus === 'ready' ? `<p>${model}.</p><p class="muted">Blender rendered</p>` : ''}</figcaption>
         </figure>
       </div>
-      ${inspectionDecision(report.inspectionAssessment, report.aid)}${buildingContent(report.building, report)}${neighborhood(report.area)}
+      ${inspectionDecision(report.inspectionAssessment, report.aid)}${viewer}${buildingContent(report.building, report)}${neighborhood(report.area)}
     </main><footer class="shell">${esc(footer)}</footer>`;
   return { title, html };
 }

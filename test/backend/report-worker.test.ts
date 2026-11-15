@@ -185,7 +185,11 @@ test('only an approved model opens a Matterport frame and the inspection decisio
   const page = await request(`/reports/${id}`);
   assert.match(page.headers.get('Content-Security-Policy') ?? '', /frame-src https:\/\/www\.arcgis\.com https:\/\/my\.matterport\.com;/);
   const html = await page.text();
-  assert.match(html, /Explore the property in 3D/);
+  assert.match(html, /href="#matterport-view">View building in 3D/);
+  assert.match(html, /<section class="card property-view" id="matterport-view" aria-labelledby="matterport-heading">/);
+  assert.match(html, /<h2 id="matterport-heading">Explore the property in 3D<\/h2>/);
+  assert(html.indexOf('id="assessment"') < html.indexOf('id="matterport-view"'));
+  assert(html.indexOf('id="matterport-view"') < html.indexOf('id="building"'));
   assert.match(html, /https:\/\/my\.matterport\.com\/show\/\?m=AuthorizedModel&amp;play=1/);
   assert.match(html, /title="Matterport 3D property scan"[^>]+referrerpolicy="no-referrer"/);
   assert.match(html, /Verify the room-to-roof alignment/);
@@ -204,7 +208,7 @@ test('only an approved model opens a Matterport frame and the inspection decisio
     assert.equal((await publish({ ...example, building })).status, 204);
     const rejected = await request(`/reports/${id}`);
     assert.doesNotMatch(rejected.headers.get('Content-Security-Policy') ?? '', /matterport\.com/);
-    assert.doesNotMatch(await rejected.text(), /Matterport 3D property scan|attacker\.invalid|UnapprovedModel/);
+    assert.doesNotMatch(await rejected.text(), /Matterport 3D property scan|View building in 3D|attacker\.invalid|UnapprovedModel/);
   }
 });
 
