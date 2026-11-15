@@ -82,18 +82,6 @@ def line(name, positions, radius, finish):
     return obj
 
 
-def lettering(body, location, orientation, size, ink, align="LEFT"):
-    curve = bpy.data.curves.new(body, "FONT")
-    curve.body = body
-    curve.align_x = align
-    curve.size = size
-    obj = bpy.data.objects.new(body, curve)
-    bpy.context.scene.collection.objects.link(obj)
-    obj.location, obj.rotation_euler = location, orientation
-    obj.data.materials.append(ink)
-    return obj
-
-
 def setup():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     scene = bpy.context.scene
@@ -113,44 +101,28 @@ def light(name, position, target, energy, size, color):
     obj.rotation_euler = (Vector(target) - obj.location).to_track_quat("-Z", "Y").to_euler()
 
 
-def camera(scene, position, target, span):
-    data = bpy.data.cameras.new("Guide view")
-    obj = bpy.data.objects.new("Guide view", data)
+def camera(scene, position, target, focal_length):
+    data = bpy.data.cameras.new("Interior camera")
+    obj = bpy.data.objects.new("Interior camera", data)
     scene.collection.objects.link(obj)
     obj.location = position
     obj.rotation_euler = (Vector(target) - obj.location).to_track_quat("-Z", "Y").to_euler()
-    data.type, data.ortho_scale = "ORTHO", span
+    data.lens = focal_length
     scene.camera = obj
     return obj
 
 
-def overlay_point(view, x, y):
-    return view.location + view.rotation_euler.to_matrix() @ Vector((x, y, -1))
-
-
-def caption(view, body, x, y, size, ink, align="LEFT"):
-    # In orthographic projection, moving the label toward the camera preserves its framing.
-    return lettering(body, overlay_point(view, x, y), view.rotation_euler, size, ink, align)
-
-
 def render(scene, target, width, height):
     scene.render.engine = "CYCLES"
-    scene.cycles.samples = 64
+    scene.cycles.samples = 48
+    scene.cycles.adaptive_threshold = 0.035
+    # Debian arm64 Blender does not ship OpenImageDenoiser.
     scene.cycles.use_denoising = False
     scene.cycles.max_bounces = 6
+    scene.cycles.transparent_max_bounces = 4
     scene.render.resolution_percentage = 100
     scene.render.resolution_x, scene.render.resolution_y = width, height
     scene.render.image_settings.file_format = "PNG"
     scene.render.image_settings.color_mode = "RGB"
     scene.render.filepath = target
     bpy.ops.render.render(write_still=True)
-
-
-def editorial_ink():
-    ink = material("Guide lettering", (0.022, 0.041, 0.051))
-    # Labels sit close to the camera and use constant color in either lighting setup.
-    nodes = ink.node_tree.nodes
-    emitter = nodes.new("ShaderNodeEmission")
-    emitter.inputs["Color"].default_value = (*ink.diffuse_color[:3], 1)
-    ink.node_tree.links.new(emitter.outputs[0], nodes.get("Material Output").inputs["Surface"])
-    return ink

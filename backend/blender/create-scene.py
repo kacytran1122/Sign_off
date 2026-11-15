@@ -1,4 +1,3 @@
-import math
 import sys
 
 import bpy
@@ -32,19 +31,6 @@ def cube(name, location, size, mat, bevel=0.05):
     return obj
 
 
-def text(name, body, location, size, mat):
-    curve = bpy.data.curves.new(name, "FONT")
-    curve.body = body
-    curve.size = size
-    curve.space_character = 1.15
-    obj = bpy.data.objects.new(name, curve)
-    scene.collection.objects.link(obj)
-    obj.location = location
-    obj.rotation_euler.x = math.radians(70)
-    obj.data.materials.append(mat)
-    return obj
-
-
 def area_light(name, location, power, size, color):
     data = bpy.data.lights.new(name, "AREA")
     data.energy = power
@@ -62,7 +48,6 @@ wall = material("Pale concrete", (0.55, 0.68, 0.70))
 slate = material("Warehouse floor", (0.11, 0.22, 0.27))
 teal = material("Lobby floor", (0.07, 0.40, 0.37))
 roof = material("Roof slab", (0.24, 0.39, 0.43))
-white = material("Ivory typography", (0.76, 0.88, 0.89))
 gold = material("Amber inspection area", (0.95, 0.50, 0.08))
 aqua = material("Blue ceiling marker", (0.03, 0.62, 0.98))
 
@@ -88,10 +73,6 @@ marker.scale.z = 1.32
 marker.data.materials.append(aqua)
 for face in marker.data.polygons:
     face.use_smooth = True
-
-text("Main label", "INSPECTION SCHEMATIC", (-3.35, -1.98, 0.28), 0.34, white)
-text("Location label", "LOBBY / CEILING REPORT", (-3.35, -2.48, 0.14), 0.225, aqua)
-text("Roof label", "ROOF INSPECTION AREA", (-3.35, 1.60, 3.2), 0.21, gold)
 
 world = bpy.data.worlds.new("Studio world")
 world.use_nodes = True

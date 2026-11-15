@@ -3,26 +3,23 @@ import sys
 import bpy
 
 locations = {
-    "lobby": (-2.02, 0.23, "LOBBY / CEILING REPORT"),
-    "warehouse": (1.50, 0.23, "WAREHOUSE / CEILING REPORT"),
-    "inspection": (0.90, 0.23, "CEILING REPORT"),
+    "lobby": (-2.02, 0.23),
+    "warehouse": (1.50, 0.23),
+    "inspection": (0.90, 0.23),
 }
 
 location, output, *options = sys.argv[sys.argv.index("--") + 1:]
 aid = options[0] if options else "none"
-x, y, label = locations[location]
+x, y = locations[location]
+# Also accept a VM scene file created before the wordless guide update.
+for obj in tuple(bpy.context.scene.objects):
+    if obj.type == "FONT":
+        bpy.data.objects.remove(obj, do_unlink=True)
 for name in ("Inspection patch", "Vertical guide", "Report marker"):
     bpy.data.objects[name].location.x = x
     bpy.data.objects[name].location.y = y
-bpy.data.objects["Location label"].data.body = label
 if aid != "none":
     color = bpy.data.materials["Amber inspection area"]
-    labels = {"bucket": "PLACE A BUCKET ON THE FLOOR IF SAFE",
-              "towel": "USE A TOWEL FOR A SMALL FLOOR SPILL IF SAFE",
-              "clear": "KEEP CLEAR / WAIT FOR MAINTENANCE"}
-    bpy.data.objects["Main label"].data.body = "TEMPORARY PROTECTION"
-    bpy.data.objects["Location label"].data.body = labels[aid]
-    bpy.data.objects["Roof label"].data.body = "SCHEMATIC / INSPECTION NEEDED"
     if aid == "bucket":
         # Open tapered bucket on the floor. A solidify modifier gives it a visible rim.
         bpy.ops.mesh.primitive_cone_add(vertices=48, radius1=.24, radius2=.34,
