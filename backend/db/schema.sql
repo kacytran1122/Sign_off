@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS work_orders (
   next_nudge_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS inspection_key uuid NOT NULL DEFAULT gen_random_uuid();
+CREATE UNIQUE INDEX IF NOT EXISTS work_order_inspection_key ON work_orders(inspection_key);
 CREATE INDEX IF NOT EXISTS work_order_lookup ON work_orders (property_id, zone_id, created_at);
 CREATE TABLE IF NOT EXISTS repair_contexts (
   order_id bigint PRIMARY KEY REFERENCES work_orders (id) ON DELETE CASCADE,
@@ -72,6 +74,7 @@ CREATE TABLE IF NOT EXISTS reports (
   confirmed_at timestamptz
 );
 ALTER TABLE reports ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE reports ADD COLUMN IF NOT EXISTS damage_point jsonb;
 ALTER TABLE reports ADD COLUMN IF NOT EXISTS area_notice_pending boolean NOT NULL DEFAULT false;
 CREATE TABLE IF NOT EXISTS work_order_events (
   id bigserial PRIMARY KEY,

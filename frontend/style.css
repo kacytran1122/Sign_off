@@ -111,3 +111,20 @@ textarea { width: 100%; resize: vertical; border: 1px solid var(--line); padding
 .inspection-plan li + li { margin-top: 6px; }
 .roof-zone { overflow: hidden; }
 .roof-zone polygon.roof-outline { fill: none; stroke: #fff3cf; stroke-width: .8px; stroke-dasharray: 2 1; }
+
+.evidence-grid > :only-child { grid-column: 1 / -1; }
+.model-surface { position: relative; min-width: 0; }
+.surface-picker { position: absolute; inset: 0; width: 100%; border: 0; background: transparent; cursor: crosshair; border-radius: 0; }
+.surface-picker:focus-visible { outline-offset: -3px; outline-color: #fffef9; }
+.surface-picker:focus-visible::after { content: '+'; color: white; text-shadow: 0 0 4px black; font-size: 1.5rem; }
+.model-comparison { display: grid; grid-template-columns: minmax(0, 1fr) minmax(8rem, 32%); }
+.photo-reference { margin: 0; padding: 12px; border-left: 1px solid var(--line); }
+.photo-reference img { display: block; max-width: 100%; max-height: 215px; object-fit: contain; }
+.photo-reference figcaption { margin-top: .45rem; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.damage-controls { display: flex; flex-wrap: wrap; gap: 8px; padding: 13px 19px; }
+.damage-controls p { flex-basis: 100%; margin: 0; font-size: 13px; }
+@media (max-width: 560px) {
+  .model-comparison { grid-template-columns: 1fr; }
+  .photo-reference { border-left: 0; }
+  .photo-reference img { max-height: 155px; }
+}

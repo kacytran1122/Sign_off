@@ -179,4 +179,16 @@ test('repair evidence and render jobs in PostgreSQL', { timeout: 30_000 }, async
     assert.match(rows[0].detail, /mapped roof target/);
     assert.doesNotMatch(await lastText(tenant), /mapped roof target/);
   });
+
+  await t.test('a photo for a matched report sends the review link only to the manager', async () => {
+    cfg.matterportKey = 'sdk-fixture';
+    const { rows: [order] } = await pool.query<{ id: string; inspection_key: string }>(
+      'SELECT id, inspection_key FROM work_orders ORDER BY id DESC LIMIT 1',
+    );
+    await send(tenant, `PHOTO L-${order.id}`);
+    await send(tenant, '', jpeg);
+    assert.match(await lastText(cfg.manager), /Match its location in Matterport/);
+    assert((await lastText(cfg.manager)).includes(`#inspect=${order.inspection_key}`));
+    assert(!(await lastText(tenant)).includes(order.inspection_key));
+  });
 });

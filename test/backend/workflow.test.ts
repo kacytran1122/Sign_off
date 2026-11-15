@@ -8,6 +8,7 @@ import { once } from 'node:events';
 import { test } from 'node:test';
 import EmbeddedPostgres from 'embedded-postgres';
 import { DateTime } from 'luxon';
+import pg from 'pg';
 import { loadConfig } from '../../backend/config.js';
 import { parseVisit } from '../../backend/schedule.js';
 import { Webhook } from 'standardwebhooks';
@@ -167,10 +168,14 @@ test('photo, clarification, duplicate delivery, scheduling, and repair reopening
     await db.initialise();
     await db.start();
     started = true;
+    const fixturePath = join(dir, 'property.json');
+    const fixture = JSON.parse(await readFile('backend/config/property.demo.json', 'utf8'));
+    await writeFile(fixturePath, JSON.stringify({ ...fixture, matterportModel: 'ModelFixture' }));
+    const databaseUrl = `postgres://postgres:test@127.0.0.1:${pgPort}/postgres`;
     child = spawn(process.execPath, ['build/backend/index.js'], { env: {
       ...process.env, DEMO_MODE: 'true', PORT: String(appPort), NUDGE_SECONDS: '30',
       PUBLIC_BASE_URL: `http://127.0.0.1:${appPort}`,
-      DATABASE_URL: `postgres://postgres:test@127.0.0.1:${pgPort}/postgres`,
+      DATABASE_URL: databaseUrl, PROPERTY_CONFIG: fixturePath,
     }, stdio: ['ignore', 'ignore', 'inherit'] });
     const origin = `http://127.0.0.1:${appPort}`;
     async function wait<T>(read: () => Promise<T | undefined>): Promise<T> {
@@ -249,6 +254,45 @@ test('photo, clarification, duplicate delivery, scheduling, and repair reopening
         fetch(`${url}/photos/invalid-id`),
       ]);
       assert.deepEqual(responses.map((response) => response.status), [404, 404, 404]);
+    });
+
+    await t.test('only the matching manager review link can confirm a photo pin', async () => {
+      const client = new pg.Client({ connectionString: databaseUrl });
+      await client.connect();
+      let editKey: string;
+      try {
+        const { rows: [row] } = await client.query<{ inspection_key: string }>(
+          'SELECT inspection_key FROM work_orders WHERE id=$1', [order.id],
+        );
+        editKey = row.inspection_key;
+      } finally {
+        await client.end();
+      }
+
+      const photoId = opened.reports[0].id;
+      const endpoint = `${url}/photos/${photoId}/damage-point`;
+      const input = { anchor: { x: 1, y: 2, z: 3 }, stem: { x: 0, y: -.22, z: 0 }, sweep: 'sweep-1', modelId: 'ModelFixture' };
+      const put = (token: string, body = input, target = endpoint) => fetch(target, {
+        method: 'PUT', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      assert.equal((await put(order.access_key)).status, 404);
+      assert.equal((await put(editKey, input, `${origin}/api/work-orders/${another.access_key}/photos/${photoId}/damage-point`)).status, 404);
+      const withoutPhoto = (await ticket()).reports.find((report) => !report.has_photo);
+      assert(withoutPhoto);
+      assert.equal((await put(editKey, input, `${url}/photos/${withoutPhoto.id}/damage-point`)).status, 404);
+      assert.equal((await put(editKey, { ...input, modelId: 'OtherModel' })).status, 409);
+      assert.equal((await put(editKey, { ...input, stem: { x: 0, y: 0, z: 0 } })).status, 400);
+      const saved = await put(editKey);
+      assert.equal(saved.status, 200);
+      const { modelId, ...point } = input;
+      const expected = { ...point, confirmed: true };
+      assert.deepEqual(await saved.json(), { damagePoint: expected });
+      assert.equal((await put(editKey)).status, 200);
+      const view = await fetch(url).then((response) => response.json());
+      assert.deepEqual(view.reports[0].damagePoint, expected);
+      assert.equal(view.timeline.filter((event: { action: string }) => event.action === 'damage_point_confirmed').length, 1);
+      assert(!JSON.stringify(view).includes(editKey));
     });
   } finally {
     if (child && child.exitCode === null) {

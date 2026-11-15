@@ -8,6 +8,7 @@ import { Webhook } from 'standardwebhooks';
 import { z } from 'zod';
 import { loadConfig, normalizeHandle } from './config.js';
 import { planRoofInspection } from './inspection.js';
+import { damagePointInput } from './damage-point.js';
 import { startBlenderWorker } from './blender.js';
 import { startAreaWorker } from './area.js';
 import { guidance, repairEffects, repairTimeZone, type Aid, type Issue } from './repair.js';
@@ -93,8 +94,9 @@ app.get('/api/work-orders/:key', async (c) => {
   const order = rows[0];
   if (!order) return c.notFound();
   const [reports, timeline, render, repairDetails] = await Promise.all([
-    db.query(`SELECT id, landmark_id, description, photo IS NOT NULL AS has_photo, confirmed_at
-      FROM reports WHERE order_id=$1 ORDER BY id`, [order.id]),
+    db.query(`SELECT id, landmark_id, description, photo IS NOT NULL AS has_photo, confirmed_at,
+      CASE WHEN photo IS NOT NULL AND damage_point->>'modelId'=$2 THEN damage_point - 'modelId' END AS "damagePoint"
+      FROM reports WHERE order_id=$1 ORDER BY id`, [order.id, cfg.property.matterportModel ?? null]),
     db.query('SELECT action, detail, created_at FROM work_order_events WHERE order_id=$1 ORDER BY id', [order.id]),
     db.query('SELECT status FROM blender_renders WHERE order_id=$1', [order.id]),
     db.query<{ address: string; property_match: boolean; issue: Issue; aid: Aid; area?: { timeZone?: string } }>(
@@ -102,21 +104,28 @@ app.get('/api/work-orders/:key', async (c) => {
   ]);
   const repair = repairDetails.rows[0];
   const { imageFile, ...roof } = cfg.property.roof;
-  const showSponsor = !repair || (repair.property_match && repair.issue === 'leak');
-  const property = showSponsor ? { ...cfg.property, roof: { ...roof, imageUrl: imageFile ? `/api/work-orders/${key.data}/roof` : roof.imageUrl } }
+  const showModel = !repair || repair.property_match;
+  const showRoof = showModel && (!repair || repair.issue === 'leak');
+  const property = showModel ? {
+    ...cfg.property,
+    zones: showRoof ? cfg.property.zones : [],
+    roof: showRoof ? { ...roof, imageUrl: imageFile ? `/api/work-orders/${key.data}/roof` : roof.imageUrl } : { attributes: [] },
+  }
     : { name: 'Reported property', address: repair.address, timeZone: repairTimeZone(repair.address, cfg.property.timeZone, repair.area?.timeZone), landmarks: [], zones: [], roof: { attributes: [] } };
-  const plans = showSponsor ? cfg.property.landmarks.filter((point) => point.zoneId === order.zone_id).flatMap((point) => {
+  const plans = showRoof ? cfg.property.landmarks.filter((point) => point.zoneId === order.zone_id).flatMap((point) => {
     const plan = planRoofInspection(cfg.property, point, repair?.aid);
     return plan ? [{ landmarkId: point.id, ...plan }] : [];
   }) : [];
   c.header('Cache-Control', 'private, no-store');
   return c.json({
     id: order.id, status: order.status, visitStart: order.visit_start, visitEnd: order.visit_end,
-    zoneId: order.zone_id, property, matterportKey: showSponsor ? cfg.matterportKey : undefined, demo: cfg.demo, photonTest: cfg.photonTest,
+    zoneId: order.zone_id, property, matterportKey: showModel ? cfg.matterportKey : undefined, demo: cfg.demo, photonTest: cfg.photonTest,
     sponsorRehearsal: cfg.sponsorRehearsal,
     renderStatus: render.rows[0]?.status,
     repair: repair && { issue: repair.issue, address: repair.address, guidance: guidance[repair.aid], effects: repairEffects(repair.issue, repair.aid), aid: repair.aid, area: repair.area },
-    reports: reports.rows, timeline: timeline.rows, plans,
+    reports: reports.rows.map(({ damagePoint, ...report }) => ({
+      ...report, damagePoint: showModel && damagePoint ? damagePoint : undefined,
+    })), timeline: timeline.rows, plans,
   });
 });
 app.get('/api/work-orders/:key/photos/:id', async (c) => {
@@ -131,6 +140,37 @@ app.get('/api/work-orders/:key/photos/:id', async (c) => {
   return new Response(Uint8Array.from(rows[0].photo), { headers: {
     'Content-Type': rows[0].photo_type, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff',
   } });
+});
+app.put('/api/work-orders/:key/photos/:id/damage-point', async (c) => {
+  const key = keySchema.safeParse(c.req.param('key'));
+  const manager = keySchema.safeParse(/^Bearer (.+)$/.exec(c.req.header('Authorization') ?? '')?.[1]);
+  const id = c.req.param('id');
+  if (!key.success || !manager.success || !/^\d{1,15}$/.test(id) || !cfg.property.matterportModel) return c.notFound();
+
+  const input = damagePointInput.safeParse(await c.req.json().catch(() => undefined));
+  if (!input.success) return c.text('Choose a valid point on the Matterport surface.', 400);
+  const { modelId, ...point } = input.data;
+  if (modelId !== cfg.property.matterportModel) return c.text('Reload the work order to use its current Matterport model.', 409);
+
+  const damagePoint = { ...point, confirmed: true };
+  const result = await db.query(`
+    WITH eligible AS (
+      SELECT r.id FROM reports r JOIN work_orders w ON w.id=r.order_id
+      LEFT JOIN repair_contexts x ON x.order_id=w.id
+      WHERE w.access_key=$1 AND w.inspection_key=$2 AND w.property_id=$3 AND r.id=$4
+        AND r.photo IS NOT NULL AND r.landmark_id=ANY($6::text[]) AND COALESCE(x.property_match,true)
+    ), changed AS (
+      UPDATE reports r SET damage_point=$5::jsonb FROM eligible WHERE r.id=eligible.id
+        AND r.damage_point IS DISTINCT FROM $5::jsonb RETURNING r.order_id
+    ), logged AS (
+      INSERT INTO work_order_events (order_id, action, detail)
+        SELECT order_id, 'damage_point_confirmed', 'A Matterport surface was matched to a tenant photo.' FROM changed
+    )
+    SELECT 1 FROM eligible`, [key.data, manager.data, cfg.property.id, id, { ...damagePoint, modelId },
+    cfg.property.landmarks.map((landmark) => landmark.id)]);
+  if (!result.rowCount) return c.notFound();
+  c.header('Cache-Control', 'private, no-store');
+  return c.json({ damagePoint });
 });
 app.get('/api/reports/:key', async (c) => {
   const key = keySchema.safeParse(c.req.param('key'));

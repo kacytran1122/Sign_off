@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg';
 import { planRoofInspection } from './inspection.js';
+import { photoReviewUrl } from './damage-point.js';
 import { identifyLeak } from './ai.js';
 import { normalizeHandle, type Config, type Landmark } from './config.js';
 import { type Message, type Photo } from './photon.js';
@@ -16,7 +17,7 @@ type Pending = {
   orderId?: string;
   photoOrderId?: string;
 };
-type Order = { id: string; status: string; access_key: string };
+type Order = { id: string; status: string; access_key: string; inspection_key: string };
 type Conversation = { active_order: string | null; pending: Pending };
 type Repair = { address: string; propertyMatch: boolean; issue: Issue; aid: Aid };
 const code = (id: string) => `L-${id}`;
@@ -43,17 +44,20 @@ async function queueManagerPhoto(db: PoolClient, manager: string, reportId: stri
 }
 
 async function addReportPhoto(db: PoolClient, cfg: Config, tenant: string, orderId: string, photo: Photo, explicit: boolean) {
-  const { rows: [report] } = await db.query<{ id: string }>(`
+  const { rows: [report] } = await db.query<{ id: string; landmark_id: string }>(`
     UPDATE reports SET photo=$3, photo_type=$4
     WHERE photo IS NULL AND id=(SELECT r.id FROM reports r JOIN work_orders w ON w.id=r.order_id
       WHERE r.order_id=$1 AND r.reporter=$2 AND r.photo IS NULL AND w.status IN ('open','scheduled')
         AND ($5 OR r.created_at > now() - interval '90 seconds') ORDER BY r.id DESC LIMIT 1)
-    RETURNING id
+    RETURNING id, landmark_id
   `, [orderId, tenant, photo.bytes, photo.type, explicit]);
   if (!report) return false;
   await record(db, orderId, 'photo_added', 'Tenant added a photo to the report.');
   if (cfg.repairContext) {
-    await notify(db, cfg.manager, `${code(orderId)} · The tenant added this photo to the report.`);
+    const { rows: [order] } = await db.query<Order>(`SELECT w.access_key,w.inspection_key FROM work_orders w
+      LEFT JOIN repair_contexts r ON w.id=r.order_id WHERE w.id=$1 AND COALESCE(r.property_match,true)`, [orderId]);
+    const review = order && photoReviewUrl(cfg, order, report.landmark_id);
+    await notify(db, cfg.manager, `${code(orderId)} · The tenant added this photo to the report.${review ? `\nMatch its location in Matterport: ${review}` : ''}`);
     await queueManagerPhoto(db, cfg.manager, report.id);
   }
   await notify(db, tenant, `I attached the photo to ${code(orderId)}.`);
@@ -64,7 +68,7 @@ async function openReport(db: PoolClient, cfg: Config, handle: string, pending: 
   const prior = await db.query('SELECT 1 FROM reports WHERE message_id = $1', [pending.messageId]);
   if (prior.rowCount) return;
   const related = await db.query<Order>(`
-    SELECT w.id, w.status, w.access_key FROM work_orders w LEFT JOIN repair_contexts r ON r.order_id=w.id
+    SELECT w.id, w.status, w.access_key, w.inspection_key FROM work_orders w LEFT JOIN repair_contexts r ON r.order_id=w.id
     WHERE w.property_id = $1 AND w.zone_id = $2 AND w.status IN ('open', 'scheduled')
       AND w.created_at >= now() - interval '48 hours'
       AND ($3::text IS NULL OR (lower(r.address)=lower($3) AND r.issue=$4 AND r.aid=$5))
@@ -73,7 +77,7 @@ async function openReport(db: PoolClient, cfg: Config, handle: string, pending: 
   const order = related.rows[0] ?? (await db.query<Order>(`
     INSERT INTO work_orders (property_id, zone_id, status, next_nudge_at)
     VALUES ($1, $2, 'open', now() + $3 * interval '1 second')
-    RETURNING id, status, access_key
+    RETURNING id, status, access_key, inspection_key
   `, [cfg.property.id, point.zoneId, cfg.nudgeSeconds])).rows[0];
   const { rows: [report] } = await db.query<{ id: string }>(`INSERT INTO reports (order_id, message_id, reporter, landmark_id, description, photo, photo_type, area_notice_pending)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`, [
@@ -104,10 +108,11 @@ async function openReport(db: PoolClient, cfg: Config, handle: string, pending: 
     const visit = { start: rows[0].visit_start.toISOString(), end: rows[0].visit_end.toISOString() };
     await notify(db, handle, `${code(order.id)} inspection: ${formatVisit(visit, repairTimeZone(repair?.address, cfg.property.timeZone))}.`);
   }
+  const photoReview = pending.photo && (!repair || repair.propertyMatch) ? photoReviewUrl(cfg, order, point.id) : undefined;
   if (repair) {
     await notify(db, cfg.manager, managerReport({
       code: code(order.id), address: repair.address, description, issue: repair.issue, aid: repair.aid,
-      hasPhoto: !!pending.photo, inspectionSummary: inspection?.summary, demo: cfg.demo || cfg.sponsorRehearsal || cfg.photonTest,
+      hasPhoto: !!pending.photo, photoReview, inspectionSummary: inspection?.summary, demo: cfg.demo || cfg.sponsorRehearsal || cfg.photonTest,
     }));
     if (pending.photo) await queueManagerPhoto(db, cfg.manager, report.id);
     if (cfg.blenderRenderer) {
@@ -120,6 +125,7 @@ async function openReport(db: PoolClient, cfg: Config, handle: string, pending: 
       ? `Demo ${code(order.id)} · ${related.rowCount ? 'Related leak report' : 'New leak report'}`
       : `${code(order.id)} · ${related.rowCount ? 'Related leak report' : 'New leak report'} · ${cfg.property.name}, suite ${point.suite}`,
     inspection?.summary,
+    photoReview && `Match the tenant photo in Matterport: ${photoReview}`,
     `Evidence: ${evidenceUrl}`,
     'Reply with an inspection window, e.g. “Tuesday 2 to 4 PM”.',
   ].filter(Boolean).join('\n'));
@@ -285,7 +291,7 @@ export async function handleMessage(db: PoolClient, cfg: Config, message: Messag
     const issue = interpreted.isDamage ? 'damage' : 'leak';
     const propertyMatch = belongsToProperty(address, cfg.property.address);
     repair = { address, propertyMatch, issue, aid: safeAid(`${prepared.pending.text} ${interpreted.description}`, issue, interpreted.temporaryAid) };
-    if (!propertyMatch || issue === 'damage') {
+    if (!propertyMatch) {
       const point = prepared.point ?? { id: 'reported-location', suite: participant.suite!, label: 'Reported area', zoneId: 'reported', aliases: [], views: [] };
       return openReport(db, cfg, handle, prepared.pending, point, interpreted.description, repair);
     }

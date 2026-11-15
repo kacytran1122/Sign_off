@@ -1,14 +1,18 @@
 import 'vite/modulepreload-polyfill';
 import { useEffect, useRef, useState } from 'react';
-import type { FormEvent } from 'react';
+import type { FormEvent, MouseEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Showcase } from '@matterport/sdk';
 import './style.css';
 
+type Vector = { x: number; y: number; z: number };
+type DamagePlacement = { anchor: Vector; stem: Vector; sweep?: string };
+type DamagePoint = DamagePlacement & { confirmed: true };
+type TenantReport = { id: string; landmark_id: string; description: string; has_photo: boolean; damagePoint?: DamagePoint };
 type Landmark = {
   id: string; label: string; suite: string;
-  anchor?: { x: number; y: number; z: number };
-  stem?: { x: number; y: number; z: number };
+  anchor?: Vector;
+  stem?: Vector;
   diagramPoint?: [number, number];
   views: { sweep: string; rotation: { x: number; y: number } }[];
 };
@@ -24,7 +28,7 @@ type Ticket = {
     roof: { imageUrl?: string; captureDate?: string; outline?: [number, number][]; attributes: { label: string; value: string; confidence?: number }[] };
     landmarks: Landmark[]; zones: { id: string; label: string; polygon: [number, number][] }[];
   };
-  reports: { id: string; landmark_id: string; description: string; has_photo: boolean }[];
+  reports: TenantReport[];
   timeline: { action: string; detail: string; created_at: string }[];
 };
 type Area = {
@@ -42,7 +46,7 @@ const statuses: Record<Status, string> = {
 const actions: Record<string, string> = {
   opened: 'Report received', inspection_planned: 'Inspection plan created', report_linked: 'Related report linked', reminder: 'Manager reminded',
   scheduled: 'Inspection scheduled', repair_reported: 'Repair reported', reopened: 'Work order reopened',
-  closed: 'Work order closed', tenant_confirmed: 'Tenant confirmed', photo_added: 'Photo added',
+  closed: 'Work order closed', tenant_confirmed: 'Tenant confirmed', photo_added: 'Photo added', damage_point_confirmed: 'Damage spot confirmed',
 };
 
 function usePoll<T>(url: string) {
@@ -70,7 +74,7 @@ function usePoll<T>(url: string) {
     const timer = setInterval(refresh, 1500);
     return () => { controller.abort(); clearInterval(timer); };
   }, [url]);
-  return { data, error };
+  return { data, error, setData };
 }
 
 function Header({ demo }: { demo?: boolean }) {
@@ -83,18 +87,58 @@ function Badge({ status }: { status: Status }) {
   return <span className={`badge ${status}`}>{statuses[status]}</span>;
 }
 
-function Interior({ ticket, active }: { ticket: Ticket; active: Landmark }) {
+type PinReview =
+  | { reportId: string; stage: 'armed' | 'locating' }
+  | { reportId: string; stage: 'preview' | 'saving'; point: DamagePlacement };
+
+function useDamageMarker(sdk: Showcase | undefined, point: DamagePlacement | undefined, preview: boolean) {
+  const { x, y, z } = point?.anchor ?? {};
+  const { x: stemX, y: stemY, z: stemZ } = point?.stem ?? {};
+  const [error, setError] = useState('');
+  useEffect(() => {
+    setError('');
+    if (!sdk || x === undefined || y === undefined || z === undefined
+        || stemX === undefined || stemY === undefined || stemZ === undefined) return;
+    let active = true;
+    const tags = sdk.Tag.add([{
+      label: preview ? 'Damage spot preview' : 'Confirmed damage spot',
+      description: preview ? 'Unsaved. Compare with the tenant photo.' : 'Location matched to the tenant photo by a reviewer.',
+      anchorPosition: { x, y, z }, stemVector: { x: stemX, y: stemY, z: stemZ },
+      color: preview ? { r: 1, g: .68, b: .19 } : { r: .92, g: .25, b: .2 },
+    }]);
+    void tags.catch(() => { if (active) setError('The damage marker could not be drawn.'); });
+    return () => {
+      active = false;
+      void tags.then((ids) => sdk.Tag.remove(...ids)).catch(() => {});
+    };
+  }, [sdk, x, y, z, stemX, stemY, stemZ, preview]);
+  return error;
+}
+
+function Interior({ ticket, active, report, access, inspectToken, onConfirm }: {
+  ticket: Ticket; active: Landmark; report: TenantReport; access: string; inspectToken?: string;
+  onConfirm: (reportId: string, point: DamagePoint) => void;
+}) {
   const frame = useRef<HTMLIFrameElement>(null);
   const added = useRef(new Set<string>());
   const [sdk, setSdk] = useState<Showcase>();
   const [message, setMessage] = useState('');
   const [walking, setWalking] = useState(false);
+  const [review, setReview] = useState<PinReview>();
+  const camera = useRef<{ position: Vector; sweep: string } | undefined>(undefined);
   const { matterportKey } = ticket;
   const model = ticket.property.matterportModel;
   const showcaseUrl = model && matterportKey
     ? `https://my.matterport.com/show/?${new URLSearchParams({ m: model, play: '1', applicationKey: matterportKey })}`
     : undefined;
-  const locationIds = [...new Set(ticket.reports.map((report) => report.landmark_id))].join(',');
+  const locationIds = [...new Set(ticket.reports.map((entry) => entry.landmark_id))].join(',');
+  const canReview = !!inspectToken && !!showcaseUrl && report.has_photo;
+  const photoUrl = `/api/work-orders/${encodeURIComponent(access)}/photos/${encodeURIComponent(report.id)}`;
+  const currentReview = canReview && review?.reportId === report.id ? review : undefined;
+  const draft = currentReview && 'point' in currentReview ? currentReview.point : undefined;
+  const confirmed = report.damagePoint?.confirmed ? report.damagePoint : undefined;
+  const confirmedError = useDamageMarker(sdk, confirmed, false);
+  const previewError = useDamageMarker(sdk, draft, true);
   useEffect(() => {
     if (!model || !matterportKey || !frame.current) return;
     const iframe = frame.current;
@@ -105,6 +149,15 @@ function Interior({ ticket, active }: { ticket: Ticket; active: Landmark }) {
       .catch(() => { if (live) setMessage('The interactive viewer could not connect. Check the model and allowed domain.'); });
     return () => { live = false; };
   }, [model, matterportKey]);
+  useEffect(() => {
+    if (!sdk || !canReview) return;
+    const pose = sdk.Camera.pose.subscribe((value) => { camera.current = value; });
+    return () => { pose.cancel(); camera.current = undefined; };
+  }, [sdk, canReview]);
+  useEffect(() => {
+    setReview(undefined);
+    setMessage('');
+  }, [report.id]);
   useEffect(() => {
     if (!sdk) return;
     const locations = ticket.property.landmarks.filter((point) =>
@@ -121,30 +174,118 @@ function Interior({ ticket, active }: { ticket: Ticket; active: Landmark }) {
     setWalking(true);
     setMessage('');
     try {
-      const sweeps = ticket.sponsorRehearsal ? (await sdk.Model.getData()).sweeps : [];
+      const sweeps = ticket.sponsorRehearsal || confirmed?.sweep ? (await sdk.Model.getData()).sweeps : [];
       const normalize = (id: string) => id.replaceAll('-', '');
-      for (const view of active.views) {
+      const views = confirmed?.sweep
+        ? [{ sweep: confirmed.sweep, rotation: active.views[0]?.rotation ?? { x: 0, y: 0 } }]
+        : active.views;
+      for (const view of views) {
         const sweep = sweeps.find(({ sid, uuid }) =>
           [sid, uuid].some((id) => id && normalize(id) === normalize(view.sweep)),
         );
         await sdk.Sweep.moveTo(sweep?.sid ?? view.sweep, { rotation: view.rotation, transition: 'transition.fade' });
       }
-      if (ticket.sponsorRehearsal && active.anchor && sdk.Camera.lookAt) await sdk.Camera.lookAt(active.anchor);
+      const target = confirmed?.anchor ?? (ticket.sponsorRehearsal ? active.anchor : undefined);
+      if (target && sdk.Camera.lookAt) await sdk.Camera.lookAt(target);
     } catch { setMessage('This walkthrough could not reach its saved viewpoint.'); }
     finally { setWalking(false); }
   }
+  async function selectSurface(event: MouseEvent<HTMLButtonElement>) {
+    if (!sdk || !frame.current || currentReview?.stage !== 'armed') return;
+    const pose = camera.current;
+    if (!pose?.sweep) {
+      setReview(undefined);
+      setMessage('Open the room view before placing a damage marker.');
+      return;
+    }
+    const bounds = frame.current.getBoundingClientRect();
+    const screen = event.detail === 0
+      ? { x: bounds.width / 2, y: bounds.height / 2 }
+      : { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
+    setReview({ reportId: report.id, stage: 'locating' });
+    try {
+      const { position, floor } = await sdk.Renderer.getWorldPositionData(screen);
+      if (!position || floor < 0) {
+        setReview((current) => current?.reportId === report.id ? { reportId: report.id, stage: 'armed' } : current);
+        setMessage('Choose a visible surface in the model.');
+        return;
+      }
+      // Offset the marker toward the reviewer so it stays visible on walls and ceilings.
+      const x = pose.position.x - position.x, y = pose.position.y - position.y, z = pose.position.z - position.z;
+      const scale = .22 / Math.hypot(x, y, z);
+      if (!Number.isFinite(scale) || ![x, y, z].every(Number.isFinite)) throw new Error('Invalid surface position');
+      const point = { anchor: position, stem: { x: x * scale, y: y * scale, z: z * scale }, sweep: pose.sweep };
+      setReview((current) => current?.reportId === report.id ? { reportId: report.id, stage: 'preview', point } : current);
+      setMessage('');
+    } catch {
+      setReview((current) => current?.reportId === report.id ? { reportId: report.id, stage: 'armed' } : current);
+      setMessage('Could not read that surface. Choose the spot again.');
+    }
+  }
+
+  async function confirmSurface() {
+    if (!canReview || !model || !draft || currentReview?.stage !== 'preview') return;
+    setReview({ reportId: report.id, stage: 'saving', point: draft });
+    setMessage('');
+    try {
+      const response = await fetch(`${photoUrl}/damage-point`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${inspectToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...draft, modelId: model }),
+      });
+      if (response.status === 401 || response.status === 403) throw new Error('This inspection link does not allow saving a marker.');
+      if (!response.ok) throw new Error('Could not save the damage spot. Try again.');
+      const { damagePoint }: { damagePoint: DamagePoint } = await response.json();
+      if (!damagePoint?.confirmed) throw new Error('Could not verify the saved damage spot.');
+      onConfirm(report.id, damagePoint);
+      setReview((current) => current?.reportId === report.id ? undefined : current);
+    } catch (error) {
+      setReview((current) => current?.reportId === report.id ? { reportId: report.id, stage: 'preview', point: draft } : current);
+      setMessage(error instanceof Error ? error.message : 'Could not save the damage spot. Try again.');
+    }
+  }
+
+  const notice = message || previewError || confirmedError;
+  const comparison = canReview && !!currentReview;
+  const picking = currentReview?.stage === 'armed' || currentReview?.stage === 'locating';
   return <section className="panel evidence">
-    <div className="panel-head"><div><h2>Reported location</h2><p>{ticket.sponsorRehearsal ? active.suite : `Suite ${active.suite}`} · {active.label}</p></div>
-      {model && <button className="small" disabled={!sdk || walking} onClick={walk}>{walking ? 'Moving…' : 'Walk to report'}</button>}</div>
-    {model ? <iframe className="showcase" title="Matterport inspection model" src={showcaseUrl}
-      allow="fullscreen; xr-spatial-tracking; autoplay" referrerPolicy="origin" ref={frame} />
+    <div className="panel-head"><div><h2>Reported location</h2><p>{ticket.sponsorRehearsal ? active.suite : `Suite ${active.suite}`} · {active.label}</p>
+      {model && report.has_photo && <p>{confirmed ? 'Damage spot confirmed against the tenant photo.' : 'Room location. Damage spot awaiting photo review.'}</p>}</div>
+      {model && <button className="small" disabled={!sdk || walking || !!currentReview} onClick={walk}>
+        {walking ? 'Moving…' : confirmed ? 'View confirmed spot' : 'Walk to report'}
+      </button>}</div>
+    {model ? <div className={comparison ? 'model-comparison' : undefined}>
+      <div className="model-surface"><iframe className="showcase" title="Matterport inspection model" src={showcaseUrl}
+        allow="fullscreen; xr-spatial-tracking; autoplay" referrerPolicy="origin" ref={frame} />
+        {picking && <button className="surface-picker" onClick={selectSurface} disabled={currentReview?.stage === 'locating'}
+          aria-label="Select a surface on the Matterport model" />}
+      </div>
+      {comparison && <figure className="photo-reference"><img src={photoUrl} alt="Tenant photo for matching the damage spot" />
+        <figcaption>{report.description}</figcaption></figure>}
+    </div>
       : <div className="diagram interior" role="img" aria-label={`Demo floor plan. Marker at ${active.label}`}>
         <div className="room west-north">Conference</div><div className="room east-north">Reception</div>
         <div className="room west-south">Studio</div><div className="room east-south">Office</div>
         <div className="hall">Hall</div>
         <span className="pin" style={{ left: `${(active.diagramPoint?.[0] ?? .5) * 100}%`, top: `${(active.diagramPoint?.[1] ?? .5) * 100}%` }} />
       </div>}
-    {message && <p className="notice" role="status">{message}</p>}
+    {canReview && <div className="damage-controls">
+      {currentReview ? <>
+        <p aria-live="polite">{picking ? 'Click the surface in Matterport that matches the damage in the photo.'
+          : 'Compare the preview marker with the tenant photo before saving.'}</p>
+        {draft && <button className="primary" onClick={confirmSurface} disabled={currentReview.stage === 'saving' || !!previewError}>
+          {currentReview.stage === 'saving' ? 'Saving…' : 'Confirm damage spot'}
+        </button>}
+        {draft && <button onClick={() => { setReview({ reportId: report.id, stage: 'armed' }); setMessage(''); }}
+          disabled={currentReview.stage === 'saving'}>Pick again</button>}
+        <button onClick={() => { setReview(undefined); setMessage(''); }}
+          disabled={currentReview.stage === 'locating' || currentReview.stage === 'saving'}>Cancel</button>
+      </> : <button className="small" disabled={!sdk || walking} onClick={() => {
+        setReview({ reportId: report.id, stage: 'armed' });
+        setMessage('');
+      }}>{confirmed ? 'Adjust damage spot' : 'Match photo to model'}</button>}
+    </div>}
+    {notice && <p className="notice" role="status">{notice}</p>}
   </section>;
 }
 
@@ -221,7 +362,14 @@ function Neighborhood({ area }: { area: Area | null | undefined }) {
   </section>;
 }
 function WorkOrder({ access }: { access: string }) {
-  const { data, error } = usePoll<Ticket>(`/api/work-orders/${encodeURIComponent(access)}`);
+  const { data, error, setData } = usePoll<Ticket>(`/api/work-orders/${encodeURIComponent(access)}`);
+  const inspectToken = new URLSearchParams(location.hash.slice(1)).get('inspect') ?? undefined;
+  function confirmPoint(reportId: string, damagePoint: DamagePoint) {
+    setData((current) => current && {
+      ...current,
+      reports: current.reports.map((entry) => entry.id === reportId ? { ...entry, damagePoint } : entry),
+    });
+  }
   const [selected, setSelected] = useState<string>();
   if (!data) return <><Header /><main className="page"><p role="status">{error || 'Loading work order…'}</p></main></>;
   const activeReport = data.reports.find((report) => report.id === selected) ?? data.reports[0];
@@ -238,7 +386,11 @@ function WorkOrder({ access }: { access: string }) {
     {error && <p role="status" className="notice">{error}</p>}
     {data.visitStart && data.visitEnd && <p className="inspection"><strong>Inspection</strong> {dateTime(data.visitStart, data.property.timeZone)} to {dateTime(data.visitEnd, data.property.timeZone)} · {data.property.timeZone}</p>}
     {plan && <InspectionPlan plan={plan} property={data.property} />}
-    {active && zone && <div className="evidence-grid"><Interior ticket={data} active={active} /><Roof ticket={data} zone={zone} /></div>}
+    {active && activeReport && (zone || data.property.matterportModel) && <div className="evidence-grid">
+      <Interior key={data.property.matterportModel} ticket={data} active={active} report={activeReport}
+        access={access} inspectToken={inspectToken} onConfirm={confirmPoint} />
+      {zone && <Roof ticket={data} zone={zone} />}
+    </div>}
     {data.repair && <Neighborhood area={data.repair.area} />}
     {data.repair && <p className="inspection"><strong>Possible effects</strong> {data.repair.effects}</p>}
     {data.renderStatus && !data.repair && <section className="panel evidence">
