@@ -144,8 +144,8 @@ export default function Landing({ demo }: { demo: boolean }) {
       </section>
       <section className={`${styles.wrap} ${styles.finish}`} aria-labelledby="finish-title">
         <div className={styles.finishCard}>
-          <div><h2 id="finish-title">Fixed means <em>fixed.</em></h2>
-            <p>{demo ? 'Walk through a repair from the first text to tenant signoff.' : 'Start by texting your building’s repair line.'}</p></div>
+          <div><h2 id="finish-title">See a repair <em>through.</em></h2>
+            <p>{demo ? 'Report damage as the tenant, schedule a visit as the manager, then switch back to confirm the fix.' : 'Start by texting your building’s repair line.'}</p></div>
           <Link className={styles.finalLink} href="/app">{appLabel} <Arrow /></Link>
         </div>
       </section>
