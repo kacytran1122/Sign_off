@@ -6,6 +6,7 @@ import styles from './phone-preview.module.css';
 
 const revealDelays = [1550, 2200, 2050, 1250];
 const messageCount = revealDelays.length + 1;
+const loopHold = 2900;
 const playbackThreshold = .05;
 const autoplayThreshold = .45;
 
@@ -30,9 +31,7 @@ export function PhonePreview() {
       setMotionEnabled(!preference.matches);
 
       if (preference.matches) {
-        hasStarted.current = true;
         setRevealed(messageCount);
-        setIsPlaying(false);
       } else if (visible && intersection >= autoplayThreshold && !hasStarted.current) {
         hasStarted.current = true;
         setRevealed(1);
@@ -57,12 +56,11 @@ export function PhonePreview() {
   }, []);
 
   useEffect(() => {
-    if (!motionEnabled || !onScreen || !isPlaying || revealed >= messageCount) return;
+    if (!motionEnabled || !onScreen || !isPlaying) return;
+    const complete = revealed === messageCount;
     const timer = window.setTimeout(() => {
-      const next = revealed + 1;
-      setRevealed(next);
-      if (next === messageCount) setIsPlaying(false);
-    }, revealDelays[revealed - 1]);
+      setRevealed(complete ? 1 : revealed + 1);
+    }, complete ? loopHold : revealDelays[revealed - 1]);
     return () => window.clearTimeout(timer);
   }, [isPlaying, motionEnabled, onScreen, revealed]);
 
@@ -71,12 +69,12 @@ export function PhonePreview() {
       setIsPlaying(false);
       return;
     }
-    hasStarted.current = true;
-    if (revealed === messageCount) setRevealed(1);
+    if (!hasStarted.current) {
+      hasStarted.current = true;
+      setRevealed(1);
+    }
     setIsPlaying(true);
   }
-
-  const action = isPlaying ? 'Pause' : revealed === messageCount ? 'Replay' : 'Resume';
 
   return <figure ref={preview} className={styles.preview} aria-label="Example repair conversation">
     <div className={styles.phone}>
@@ -93,13 +91,24 @@ export function PhonePreview() {
         <div className={styles.contact}>
           <SignoffLogo className={styles.contactLogo} compact />
           <strong>Signoff repair line</strong>
-          <span>iMessage</span>
+          <span className={styles.channel}>iMessage</span>
+          {motionEnabled && <button
+            className={styles.playback}
+            type="button"
+            aria-label={isPlaying ? 'Pause conversation' : 'Resume conversation'}
+            aria-controls={threadId}
+            onClick={handlePlayback}
+          >
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 20 20" fill="none">
+              <path d={isPlaying ? 'M7 5v10m6-10v10' : 'm7 5 8 5-8 5V5Z'} />
+            </svg>
+          </button>}
         </div>
         <div id={threadId} className={styles.thread}>
           <span className={styles.threadTime}>Today 9:41 AM</span>
           <div className={styles.outgoing} data-revealed="true">
             <div className={styles.messagePhoto} role="img" aria-label="Ceiling stain above the living room window" />
-            <p>Water stain above the living room window.</p>
+            <p><strong>@signoff</strong> Water stain above the living room window.</p>
           </div>
           <p className={styles.incoming} data-revealed={revealed >= 2}>I’ve sent the photo to your manager. The crew can visit Tuesday, 2–4 PM.</p>
           <p className={styles.incoming} data-revealed={revealed >= 3}>Your manager marked it fixed. Is the ceiling still leaking?</p>
@@ -109,25 +118,5 @@ export function PhonePreview() {
         <i className={styles.homeBar} aria-hidden="true" />
       </div>
     </div>
-    <figcaption className={styles.caption}>
-      <span>Example repair conversation</span>
-      <button
-        className={styles.playback}
-        type="button"
-        aria-label={action + ' conversation'}
-        aria-controls={threadId}
-        data-enabled={motionEnabled}
-        onClick={handlePlayback}
-      >
-        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 20 20" fill="none">
-          {action === 'Pause'
-            ? <path d="M7 5v10m6-10v10" />
-            : action === 'Replay'
-              ? <path d="M4 9a6 6 0 1 1 1.5 5M4 5v4h4" />
-              : <path d="m7 5 8 5-8 5V5Z" />}
-        </svg>
-        {action}
-      </button>
-    </figcaption>
   </figure>;
 }

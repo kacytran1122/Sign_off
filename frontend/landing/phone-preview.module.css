@@ -46,6 +46,7 @@
 }
 
 .contact {
+  position: relative;
   display: grid;
   justify-items: center;
   gap: .08rem;
@@ -54,7 +55,7 @@
   border-bottom: 1px solid #eee7ec;
   font-size: .84rem;
 }
-.contact > span:last-child { color: #6c616a; font-size: .68rem; }
+.channel { color: #6c616a; font-size: .68rem; }
 .contactLogo { --signoff-logo-size: 2.15rem; margin-bottom: .22rem; }
 
 .thread {
@@ -128,46 +129,27 @@
   transform: translateX(-50%);
 }
 
-.caption {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: .35rem;
-  width: max-content;
-  max-width: 100%;
-  margin: .65rem auto 0;
-  padding: .16rem .2rem .16rem .68rem;
-  border: 1px solid #fff8;
-  border-radius: 99px;
-  background: #fffcf8ed;
-  color: #58424f;
-  font-size: .72rem;
-}
 .playback {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: .24rem;
-  min-width: 4.7rem;
-  min-height: 1.8rem;
-  padding: .18rem .45rem;
-  border: 1px solid #dfd1dc;
-  border-radius: 99px;
-  background: #fffdfb;
-  color: var(--plum-deep);
-  font: inherit;
-  font-weight: 650;
+  position: absolute;
+  inset: .15rem .32rem auto auto;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--plum);
   cursor: pointer;
 }
 .playback:hover { background: #f2e8ef; }
 .playback svg {
-  flex: none;
   stroke: currentColor;
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 1.65;
 }
-.playback[data-enabled="false"] { visibility: hidden; }
 
 @media (max-width: 700px) {
   .preview { align-self: center; width: min(100%, 19.1rem); }

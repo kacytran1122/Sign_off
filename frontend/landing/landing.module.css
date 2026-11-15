@@ -68,34 +68,24 @@
 
 .hero {
   overflow: hidden;
-  background: linear-gradient(90deg, #fff7ebc9, #fff8f01a 66%, transparent),
+  background: linear-gradient(90deg, #fff7ebed, #fff7ebad 37%, #fff8f01a 65%, transparent),
     url('./courtyard-hero.webp') center 60% / cover no-repeat #f4e7e9;
 }
-.heroGrid { padding-block: clamp(2.5rem, 5.5vw, 5rem) clamp(2.2rem, 5vw, 4.25rem); }
+.heroGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.17fr) minmax(16rem, .83fr);
+  align-items: center;
+  gap: clamp(1.4rem, 4vw, 3.6rem);
+  padding-block: clamp(2.5rem, 5.5vw, 4.5rem);
+}
 .heroCopy { max-width: 35rem; }
 .hero h1 { font-size: clamp(3.9rem, 7.25vw, 7.05rem); line-height: .88; }
 .hero h1 em { display: block; }
 .heroCopy .heroDescription { margin-top: 1rem; color: #544150; font-size: clamp(1.01rem, 1.65vw, 1.2rem); }
 .actions { display: flex; flex-wrap: wrap; gap: .58rem; margin-top: 1.18rem; }
 .actions a { min-height: 2.95rem; }
-.heroStage {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(11rem, .34fr);
-  align-items: center;
-  width: min(73%, 49rem);
-  margin-top: 1.35rem;
-}
-.heroStage .heroWindow {
-  overflow: hidden;
-  padding: .35rem;
-  border: 1px solid #fff;
-  border-radius: 1.05rem;
-  background: #fdf7f2;
-  box-shadow: 0 1.5rem 3rem #4a28333b, 0 0 0 1px #57354b26;
-}
-.heroWindow img { display: block; width: 100%; height: auto; border-radius: .67rem; }
-.heroPhone { position: relative; z-index: 1; min-width: 0; margin-inline-start: -3.2rem; }
-.heroPhone > figure { width: min(100%, 16.7rem); }
+.heroPhone { min-width: 0; }
+.heroPhone > figure { width: min(100%, 17.75rem); }
 
 .workspaceShowcase { padding-block: clamp(3.45rem, 7.2vw, 6.05rem); }
 .workspaceShowcase h2 { margin-bottom: clamp(1.15rem, 3vw, 2rem); }
@@ -104,18 +94,19 @@
 .proofGrid { display: grid; grid-template-columns: minmax(0, .84fr) minmax(0, 1.16fr); gap: clamp(1.65rem, 7vw, 5rem); align-items: center; padding-block: clamp(3.5rem, 7vw, 5.7rem); }
 .proofCopy h2 { max-width: 15ch; text-wrap: balance; }
 .proofCopy p { margin-top: 1.1rem; }
-.comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: .65rem; }
+.comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: .65rem; }
 .comparison > div {
   display: grid;
-  gap: .45rem;
+  grid-template-rows: auto 1fr;
+  gap: .4rem;
   padding: .34rem;
   border: 1px solid #e7d9dd;
   border-radius: 1.03rem;
   background: #fffaf7;
   box-shadow: 0 .9rem 1.7rem #57304914;
 }
-.comparison > div:nth-child(2) { margin-top: clamp(.5rem, 3vw, 1.9rem); }
-.beforePhoto, .afterPhoto { aspect-ratio: 4 / 4.45; border-radius: .73rem; background: #dfd1be url('./ceiling-repair.jpg') no-repeat left center / 200% auto; }
+.repairImage { display: block; width: 100%; height: auto; aspect-ratio: 4 / 3; object-fit: cover; border-radius: .73rem; }
+.beforePhoto, .afterPhoto { background: #dfd1be url('./ceiling-repair.jpg') no-repeat left center / 200% auto; }
 .afterPhoto { background-position: right center; }
 .comparison span, .comparison figcaption { color: var(--quiet); font-size: .79rem; }
 .comparison span { padding: 0 .26rem .16rem; }
@@ -143,8 +134,6 @@
 
 @media (max-width: 960px) {
   .wrap { width: calc(100% - 3rem); }
-  .heroStage { width: min(90%, 42rem); }
-  .heroPhone { margin-inline-start: -2.4rem; }
 }
 
 @media (max-width: 700px) {
@@ -153,9 +142,7 @@
     background: linear-gradient(180deg, #fcf2edea 0%, #f9efedcc 20%, #f9ede241 48%, transparent 78%),
       url('./courtyard-hero.webp') 78% bottom / auto 80% no-repeat #f5e6e9;
   }
-  .heroStage { width: 100%; margin-top: 1.7rem; grid-template-columns: 1fr; }
-  .heroStage .heroWindow { display: none; }
-  .heroPhone { margin: 0; }
+  .heroGrid { grid-template-columns: 1fr; gap: 1.7rem; }
   .heroPhone > figure { width: min(80%, 16.75rem); }
   .proofGrid { grid-template-columns: 1fr; }
   .comparison { width: min(100%, 32rem); }

@@ -31,8 +31,15 @@ test('the landing page introduces Signoff and leads to the repair workspace', as
   await page.getByRole('banner').getByRole('link', { name: 'Tenant signoff', exact: true }).click();
   await expect(page).toHaveURL(/#verification$/);
   await expect(page.locator('#verification')).toBeInViewport();
+  const proof = page.getByRole('region', { name: 'Tenants get the final say.' });
+  await expect(proof.getByRole('img')).toHaveCount(4);
+  for (const name of [/water dripping from a sink drain pipe/i, /window latch with a raised screw/i]) {
+    const image = proof.getByRole('img', { name });
+    await image.scrollIntoViewIfNeeded();
+    await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
+  }
 
-  const closing = page.getByRole('region', { name: 'See a repair through.' });
+  const closing = page.getByRole('region', { name: 'One text gets it started.' });
   await expect(closing.getByRole('link', { name: 'Try the demo' })).toHaveAttribute('href', '/app');
 
   await page.getByRole('link', { name: 'Get started', exact: true }).click();
@@ -53,7 +60,7 @@ test('the landing page offers the demo without horizontal overflow on mobile', a
   await expect(page.getByRole('heading', { name: 'From report to repair.' })).toBeVisible();
 });
 
-test('the phone preview reveals messages in order and replays the conversation', async ({ page }) => {
+test('the phone previews a Signoff mention and repeats the conversation automatically', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.clock.install();
   await page.goto('/');
@@ -61,8 +68,7 @@ test('the phone preview reveals messages in order and replays the conversation',
   const phone = page.getByRole('figure', { name: 'Example repair conversation' });
   const pause = phone.getByRole('button', { name: 'Pause conversation' });
   const resume = phone.getByRole('button', { name: 'Resume conversation' });
-  const replay = phone.getByRole('button', { name: 'Replay conversation' });
-  const report = phone.getByText('Water stain above the living room window.', { exact: true });
+  const report = phone.getByText('@signoff Water stain above the living room window.', { exact: true });
   const scheduling = phone.getByText(/I’ve sent the photo to your manager/);
   const repair = phone.getByText(/Your manager marked it fixed/);
   const confirmation = phone.getByText(/Resolved\. It’s dry now\./);
@@ -71,6 +77,10 @@ test('the phone preview reveals messages in order and replays the conversation',
   await phone.scrollIntoViewIfNeeded();
   await expect(pause).toBeVisible();
   await expect(report).toBeVisible();
+  const hero = page.getByRole('region', { name: 'Report a repair. See it through.' });
+  await expect(hero.getByRole('figure')).toHaveCount(1);
+  await expect(phone.locator('figcaption')).toHaveCount(0);
+  await expect(pause).toHaveText('');
   await expect(signoff).toBeHidden();
 
   await page.clock.runFor(1900);
@@ -88,9 +98,11 @@ test('the phone preview reveals messages in order and replays the conversation',
   await page.clock.runFor(1600);
   await expect(signoff).toBeVisible();
 
-  await replay.click();
+  await page.clock.runFor(3000);
   await expect(report).toBeVisible();
   await expect(signoff).toBeHidden();
+  await page.clock.runFor(1700);
+  await expect(scheduling).toBeVisible();
 });
 
 test('the phone preview displays the whole conversation with reduced motion', async ({ page }) => {

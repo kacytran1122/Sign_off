@@ -1,7 +1,8 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { SignoffLogo } from '../brand/SignoffLogo';
-import scheduledWorkOrder from './assets/scheduled-work-order.webp';
+import leakingSink from './assets/leaking-sink.webp';
+import looseWindowLatch from './assets/loose-window-latch.webp';
 import { PhonePreview } from './PhonePreview';
 import { RepairExample } from './RepairExample';
 import styles from './landing.module.css';
@@ -39,12 +40,7 @@ export default function Landing({ demo, previewOnly = false }: { demo: boolean; 
               <a className={styles.secondary} href="#how">See how it works <Arrow down /></a>
             </div>
           </div>
-          <div className={styles.heroStage}>
-            <figure className={styles.heroWindow}>
-              <Image src={scheduledWorkOrder} alt="Example Signoff work order with a scheduled visit, reported room, and roof inspection area" preload unoptimized />
-            </figure>
-            <div className={styles.heroPhone}><PhonePreview /></div>
-          </div>
+          <div className={styles.heroPhone}><PhonePreview /></div>
         </div>
       </section>
       <section className={`${styles.wrap} ${styles.workspaceShowcase}`} id="how" aria-labelledby="workspace-title">
@@ -58,15 +54,29 @@ export default function Landing({ demo, previewOnly = false }: { demo: boolean; 
             <p>Confirm the fix or reopen the work order by text.</p>
           </div>
           <figure className={styles.comparison}>
-            <div><div className={styles.beforePhoto} role="img" aria-label="A ceiling with a water stain above the window" /><span>Before</span></div>
-            <div><div className={styles.afterPhoto} role="img" aria-label="The same ceiling repaired" /><span>After · Signed off</span></div>
-            <figcaption>Illustrative repair example</figcaption>
+            <div>
+              <div className={`${styles.repairImage} ${styles.beforePhoto}`} role="img" aria-label="A ceiling with a water stain above the window" />
+              <span>Ceiling stain</span>
+            </div>
+            <div>
+              <div className={`${styles.repairImage} ${styles.afterPhoto}`} role="img" aria-label="The same ceiling repaired" />
+              <span>Ceiling repaired · Signed off</span>
+            </div>
+            <div>
+              <Image className={styles.repairImage} src={leakingSink} alt="Water dripping from a sink drain pipe into the cabinet" unoptimized />
+              <span>Leaking sink pipe</span>
+            </div>
+            <div>
+              <Image className={styles.repairImage} src={looseWindowLatch} alt="A window latch with a raised screw and loose mounting plate" unoptimized />
+              <span>Loose window latch</span>
+            </div>
+            <figcaption>Illustrative repair photos</figcaption>
           </figure>
         </div>
       </section>
       <section className={`${styles.wrap} ${styles.finish}`} aria-labelledby="finish-title">
         <div className={styles.finishCard}>
-          <h2 id="finish-title">See a repair <em>through.</em></h2>
+          <h2 id="finish-title">One text <em>gets it started.</em></h2>
           <a className={styles.primary} href={destination}>{appLabel} <Arrow /></a>
         </div>
       </section>
