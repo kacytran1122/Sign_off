@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent, MouseEvent } from 'react';
 import type { Showcase } from '@matterport/sdk';
+import { SignoffLogo } from './brand/SignoffLogo';
 
 type Vector = { x: number; y: number; z: number };
 type DamagePlacement = { anchor: Vector; stem: Vector; sweep?: string };
@@ -83,7 +84,7 @@ function usePoll<T>(url?: string) {
 
 function Header({ demo }: { demo?: boolean }) {
   return <header className="topbar"><div className="topbar-inner">
-    <a className="brand" href="/"><span className="brand-mark" aria-hidden="true">+</span>Signoff</a>
+    <a className="brand" href="/" aria-label="Signoff home"><SignoffLogo variant="light" /></a>
     {demo && <a className="demo-label" href="/app">Local demo</a>}
   </div></header>;
 }

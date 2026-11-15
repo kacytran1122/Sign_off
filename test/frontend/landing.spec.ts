@@ -11,6 +11,10 @@ test('the landing page introduces Signoff and leads to the repair workspace', as
   await expect(page).toHaveURL(/#how$/);
   await expect(page.getByRole('heading', { name: 'Three steps. No phone tag.' })).toBeVisible();
 
+  await page.getByRole('banner').getByRole('link', { name: 'Who it’s for', exact: true }).click();
+  await expect(page).toHaveURL(/#who$/);
+  await expect(page.locator('#who')).toBeInViewport();
+
   await page.getByRole('link', { name: 'Get started', exact: true }).click();
   await expect(page).toHaveURL(/\/app$/);
   await expect(page.getByRole('heading', { name: 'From report to repair.' })).toBeVisible();
@@ -24,4 +28,33 @@ test('the landing page offers the demo without horizontal overflow on mobile', a
   await expect(demo).toBeInViewport();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
   await expect(demo).toHaveAttribute('href', '/app');
+  await demo.click();
+  await expect(page).toHaveURL(/\/app$/);
+  await expect(page.getByRole('heading', { name: 'From report to repair.' })).toBeVisible();
+});
+
+test('Signoff uses one logo across the landing page, workspace, and shared views', async ({ page }) => {
+  await page.goto('/');
+  const home = page.getByRole('banner').getByRole('link', { name: 'Signoff home', exact: true });
+  const mark = home.locator('svg');
+  const logoPaths = () => mark.locator('path').evaluateAll((paths) => paths.map((path) => path.getAttribute('d')));
+  await expect(mark).toBeVisible();
+  const landingPaths = await logoPaths();
+  expect(landingPaths.length).toBeGreaterThan(0);
+
+  const icon = page.locator('link[rel="icon"]');
+  await expect(icon).toHaveAttribute('href', /^\/icon\.svg(?:\?|$)/);
+  const iconResponse = await page.request.get(await icon.evaluate((link: HTMLLinkElement) => link.href));
+  expect(iconResponse.ok()).toBe(true);
+  expect(iconResponse.headers()['content-type']).toContain('image/svg+xml');
+
+  for (const route of ['/app', '/reports/invalid-key', '/work-orders/invalid-key']) {
+    await page.goto(route);
+    await expect(home).toHaveAttribute('href', '/');
+    await expect(mark).toBeVisible();
+    expect(await logoPaths()).toEqual(landingPaths);
+  }
+
+  await home.click();
+  await expect(page).toHaveURL(/\/$/);
 });

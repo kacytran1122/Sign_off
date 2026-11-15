@@ -41,6 +41,8 @@ test('the report share proxies report content and Next static assets only', asyn
     '/_next/static/chunks/report.03~abcd.js',
     '/_next/static/chunks/app/(workspace)/reports/%5Bkey%5D/page.css',
     '/_next/static/media/demo.woff2',
+    '/icon.svg',
+    '/icon.svg?icon.11g2kf68_b2te.svg',
   ];
 
   for (const path of [...reports, ...assets]) {
@@ -59,9 +61,12 @@ test('the report share proxies report content and Next static assets only', asyn
     '/_next/server/config.js', '/_next/static/../server/config.js',
     '/_next/static/%2e%2e/server/config.js', '/_next/static/chunks%2Freport.js',
     '/_next/static/chunks/report.js?x=1', '/_next/static/chunks/report.js.map',
+    '/icon.svg?v=one', '/icon.svg?icon.x.svg', '/icon.svg?icon.11g2kf68_b2te.svg&x=1',
+    '/icons/icon.svg', '/_next/static/media/other.svg',
   ]) {
     assert.equal((await probe(port, path)).status, 404, path);
   }
   assert.equal((await probe(port, reports[0], 'POST')).status, 404);
+  assert.equal((await probe(port, '/icon.svg', 'POST')).status, 404);
   assert.deepEqual(forwarded, [...reports, ...assets]);
 });

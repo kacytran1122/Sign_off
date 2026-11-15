@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import './base.css';
 
 export const metadata: Metadata = {
+  applicationName: 'Signoff',
   title: {
     default: 'Signoff | Repairs tenants can sign off on',
     template: '%s | Signoff',

@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 
 const key = '[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}';
 const reportPath = new RegExp(`^/(?:reports/${key}/?|api/reports/${key}(?:/render)?)$`, 'i');
+const iconPath = /^\/icon\.svg(?:\?icon\.[a-z0-9_-]{13}\.svg)?$/;
 const staticPrefix = '/_next/static/';
 
 function isStaticAsset(path) {
@@ -18,7 +19,7 @@ function isStaticAsset(path) {
 export function createReportShareServer(upstreamOrigin) {
   return createServer(async (request, response) => {
     const path = request.url ?? '';
-    const asset = isStaticAsset(path);
+    const asset = iconPath.test(path) || isStaticAsset(path);
     response.setHeader('X-Robots-Tag', 'noindex, nofollow');
     response.setHeader('Referrer-Policy', 'no-referrer');
     response.setHeader('X-Content-Type-Options', 'nosniff');

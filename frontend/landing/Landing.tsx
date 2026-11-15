@@ -1,109 +1,97 @@
 import Link from 'next/link';
+import { SignoffLogo } from '../brand/SignoffLogo';
 import styles from './landing.module.css';
 
-const steps = [
-  { label: 'Text it in', detail: 'A photo and a few words. Done.' },
-  { label: 'Fix it', detail: 'The crew knows where to look before they arrive.' },
-  { label: 'Sign it off', detail: 'The tenant confirms the repair or reopens the work order.' },
+const roles = [
+  { title: 'Tenants', description: 'Text a photo, follow the repair, and confirm when the problem is fixed.' },
+  { title: 'Property managers', description: 'Get the original photo, the reported location, and a timeline you can share with your crew.' },
+  { title: 'Repair crews', description: 'See what was reported and where to start when you arrive.' },
 ];
 
-const audiences = [
-  { name: 'Tenants', detail: 'Your yes closes the job.' },
-  { name: 'Managers', detail: 'Every repair, with proof.' },
-  { name: 'Crews', detail: 'Fewer callbacks. Clear jobs.' },
-];
-
-function Check({ size = 24, filled = false, className }: { size?: number; filled?: boolean; className?: string }) {
-  return <svg className={className} aria-hidden="true" viewBox="0 0 40 40" width={size} height={size}>
-    <circle cx="20" cy="20" r={filled ? 20 : 16.5} fill={filled ? 'var(--check-fill, #f6ecc8)' : 'none'}
-      stroke={filled ? 'none' : 'currentColor'} strokeWidth="4" />
-    <path d="M12.5 20.5l5 5 10-11" stroke="currentColor" fill="none" strokeWidth="4"
-      strokeLinecap="round" strokeLinejoin="round" />
+function Arrow({ down = false }: { down?: boolean }) {
+  return <svg aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none" className={down ? styles.arrowDown : undefined}>
+    <path d="M4 10h11m-4.5-4.5L15 10l-4.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
   </svg>;
 }
 
-function Brand({ compact = false }: { compact?: boolean }) {
-  return <Link className={compact ? styles.brandSmall : styles.brand} href="/" aria-label="Signoff home">Signoff</Link>;
+function BrandLink() {
+  return <Link className={styles.brand} href="/" aria-label="Signoff home"><SignoffLogo /></Link>;
 }
 
-function DashboardPreview() {
-  return <div className={styles.productPreview}>
-    <div className={styles.browser}>
-      <div className={styles.browserBar}>
-        <span aria-hidden="true" className={styles.browserDots}><i /><i /><i /></span>
-        <span className={styles.browserTitle}>Signoff work orders</span>
-      </div>
-      <div className={styles.dashboard}>
-        <div className={styles.dashboardTop}>
-          <div className={styles.dashboardBrand}><span aria-hidden="true">+</span> Signoff</div>
-          <span>Example work order</span>
+function PhonePreview() {
+  return <figure className={styles.preview}>
+    <div className={styles.phone}>
+      <div className={styles.screen}>
+        <div aria-hidden="true" className={styles.statusBar}>
+          <span>9:41</span><i className={styles.sensor} />
+          <svg width="38" height="12" viewBox="0 0 38 12" fill="none">
+            <path d="M1 10V8m3 2V6m3 4V4m3 6V2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+            <path d="M15 5a6 6 0 0 1 8 0m-6 2a3 3 0 0 1 4 0m-2 2h.01" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" />
+            <rect x="27" y="3" width="9" height="6" rx="1.5" stroke="currentColor" />
+            <path d="M29 5h5v2h-5zm8 0h1v2h-1z" fill="currentColor" />
+          </svg>
         </div>
-        <div className={styles.dashboardBody}>
-          <div className={styles.dashboardText}>
-            <span className={styles.eyebrow}>Work order L-12</span>
-            <p className={styles.dashboardHeading}>Ceiling stain by the window</p>
-            <span className={styles.scheduled}>Scheduled</span>
-            <dl>
-              <div><dt>Location</dt><dd>Unit 2B · Living room</dd></div>
-              <div><dt>Visit window</dt><dd>Tuesday, 2 to 4 PM</dd></div>
-              <div><dt>Next step</dt><dd>Tenant confirms the repair</dd></div>
-            </dl>
-          </div>
-          <div className={styles.locationPreview}>
-            <span>Reported location</span>
-            <div className={styles.floorPlan}>
-              <div className={styles.livingRoom}><span>Living room</span><i aria-hidden="true" /></div>
-              <div>Kitchen</div>
-              <div>Bedroom</div>
-            </div>
-          </div>
+        <div className={styles.contact}>
+          <SignoffLogo className={styles.contactLogo} compact />
+          <strong>Signoff repair line</strong>
+          <span>iMessage</span>
         </div>
+        <div className={styles.thread}>
+          <span className={styles.threadTime}>Today 9:41 AM</span>
+          <div className={styles.outgoing}>
+            <div className={styles.messagePhoto} role="img" aria-label="Ceiling stain above the living room window" />
+            <p>Water stain above the living room window.</p>
+          </div>
+          <p className={styles.incoming}>I’ve sent the photo to your manager. The crew can visit Tuesday, 2–4 PM.</p>
+          <p className={styles.incoming}>Your manager marked it fixed. Is the ceiling still leaking?</p>
+          <p className={styles.outgoing}>Resolved. It’s dry now.</p>
+          <p className={styles.signed}><SignoffLogo compact /> Signed off by tenant</p>
+        </div>
+        <i className={styles.homeBar} aria-hidden="true" />
       </div>
     </div>
-    <div className={styles.phone} role="group" aria-label="Example repair text thread">
-      <div className={styles.phoneInside}>
-        <div className={styles.phoneHeader}><span aria-hidden="true" className={styles.phoneMark}>S</span>Building repairs</div>
-        <div className={styles.phoneMessages}>
-          <p className={styles.sentMessage}>Ceiling stain by the window</p>
-          <p className={styles.receivedMessage}>Crew booked. Tue 2 to 4 PM.</p>
-          <p className={styles.receivedMessage}>Crew says it’s fixed. Is it?</p>
-          <p className={styles.resolvedMessage}>Resolved</p>
-          <span className={styles.signedOff}><Check size={14} />Signed off</span>
-        </div>
-      </div>
+    <figcaption>Example repair conversation</figcaption>
+  </figure>;
+}
+
+function WorkOrderPreview() {
+  return <div className={styles.workOrder} aria-label="Example work order">
+    <div className={styles.workOrderHeader}><SignoffLogo /><span>Scheduled</span></div>
+    <div className={styles.workOrderBody}>
+      <strong>Ceiling stain by the window</strong>
+      <span>Unit 2B · Living room</span>
+      <div className={styles.floorPlan} aria-hidden="true"><span>Living room <i /></span><span>Kitchen</span><span>Entry</span></div>
     </div>
   </div>;
 }
 
-function StepPreview({ step }: { step: number }) {
-  if (step === 0) {
-    return <div className={`${styles.stepPreview} ${styles.intakePreview}`}>
-      <div className={styles.miniThread}>
-        <span className={styles.miniTitle}>Building repairs</span>
-        <div className={styles.miniPhoto} />
-        <p className={styles.sentMessage}>Ceiling stain by the window</p>
-        <p className={styles.receivedMessage}>I’ve opened your work order.</p>
-      </div>
-    </div>;
-  }
-  if (step === 1) {
-    return <div className={`${styles.stepPreview} ${styles.visitPreview}`}>
-      <div className={styles.miniOrder}>
-        <span className={styles.eyebrow}>Work order L-12</span>
-        <strong>Crew visit</strong>
-        <div className={styles.visitDate}><span aria-hidden="true" />Tuesday, 2 to 4 PM</div>
-        <small>Unit 2B · Living room</small>
-      </div>
-    </div>;
-  }
-  return <div className={`${styles.stepPreview} ${styles.signoffPreview}`}>
-    <div className={styles.miniThread}>
-      <span className={styles.miniTitle}>Building repairs</span>
-      <p className={styles.receivedMessage}>Is the ceiling still leaking?</p>
-      <p className={styles.resolvedMessage}>Resolved</p>
-      <span className={styles.signedOff}><Check size={14} />Signed off</span>
+function HowItWorks() {
+  return <section className={`${styles.wrap} ${styles.how}`} id="how" aria-labelledby="how-title">
+    <div className={styles.sectionIntro}>
+      <p className={styles.eyebrow}>How it works</p>
+      <h2 id="how-title">Three steps. <em>No phone tag.</em></h2>
+      <p>One text thread keeps everyone up to date from the first photo to the final confirmation.</p>
     </div>
-  </div>;
+    <ol className={styles.steps}>
+      <li className={styles.step}>
+        <div className={`${styles.stepVisual} ${styles.reportVisual}`}>
+          <div className={styles.photoCard}><div className={styles.messagePhoto} role="img" aria-label="Example ceiling stain" />
+            <p>Water stain by the window.</p></div>
+        </div>
+        <div className={styles.stepCopy}><h3>Text a photo</h3><p>Tell Signoff what’s damaged and where you see it.</p></div>
+      </li>
+      <li className={styles.step}>
+        <div className={`${styles.stepVisual} ${styles.planVisual}`}><WorkOrderPreview /></div>
+        <div className={styles.stepCopy}><h3>Schedule the repair</h3><p>The manager reviews the photo and shares the visit window.</p></div>
+      </li>
+      <li className={styles.step}>
+        <div className={`${styles.stepVisual} ${styles.doneVisual}`}>
+          <div className={styles.completion}><SignoffLogo compact /><strong>Signed off</strong><p>Confirmed by the tenant</p></div>
+        </div>
+        <div className={styles.stepCopy}><h3>Confirm it’s fixed</h3><p>Reply when it’s resolved, or reopen the work order in the same thread.</p></div>
+      </li>
+    </ol>
+  </section>;
 }
 
 export default function Landing({ demo }: { demo: boolean }) {
@@ -111,73 +99,61 @@ export default function Landing({ demo }: { demo: boolean }) {
   return <div className={styles.landing}>
     <a className={styles.skipLink} href="#content">Skip to content</a>
     <header className={styles.header}>
-      <nav className={styles.navigation} aria-label="Main navigation">
-        <Brand />
-        <a href="#how">How it works</a>
-        <a href="#who">Who it’s for</a>
-        <Link className={styles.primaryLink} href="/app">Get started</Link>
+      <nav className={`${styles.wrap} ${styles.navigation}`} aria-label="Main navigation">
+        <BrandLink />
+        <div className={styles.navLinks}><a href="#how">How it works</a><a href="#who">Who it’s for</a></div>
+        <Link className={styles.primary} href="/app">Get started <Arrow /></Link>
       </nav>
     </header>
     <main id="content" tabIndex={-1}>
       <section className={styles.hero} aria-labelledby="headline">
-        <div className={styles.heroBadge}><Check size={22} filled />Works over text. Nothing to download.</div>
-        <h1 id="headline">The repair isn’t done until the tenant <em>says so.</em></h1>
-        <p className={styles.heroDescription}>Report it. Fix it. Sign it off. All in one text thread.</p>
-        <div className={styles.heroActions}>
-          <Link className={`${styles.primaryLink} ${styles.heroButton}`} href="/app">{appLabel}</Link>
-          <a className={styles.secondaryLink} href="#how">See how it works</a>
-        </div>
-        <DashboardPreview />
-      </section>
-      <div className={styles.sections}>
-        <section id="how" className={styles.how} aria-labelledby="how-title">
-          <div className={styles.sectionIntro}>
-            <span className={styles.eyebrow}>How it works</span>
-            <h2 id="how-title">Three steps. <em>No phone tag.</em></h2>
+        <div className={`${styles.wrap} ${styles.heroGrid}`}>
+          <div className={styles.heroCopy}>
+            <p className={styles.heroKicker}>Building repairs over text</p>
+            <h1 id="headline">The repair isn’t done until the tenant <em>says so.</em></h1>
+            <p className={styles.heroDescription}>Report a problem with a photo. Follow the repair and confirm it’s fixed, all in one text thread.</p>
+            <div className={styles.actions}>
+              <Link className={styles.primary} href="/app">{appLabel} <Arrow /></Link>
+              <a className={styles.secondary} href="#how">See how it works <Arrow down /></a>
+            </div>
           </div>
-          <ol className={styles.steps}>
-            {steps.map((step, index) => <li key={step.label} className={styles.step}>
-              <StepPreview step={index} />
-              <div className={styles.stepCopy}>
-                {index === 2 ? <Check size={32} /> : <span className={styles.stepNumber} aria-hidden="true">{index + 1}</span>}
-                <div><h3>{step.label}</h3><p>{step.detail}</p></div>
-              </div>
-            </li>)}
-          </ol>
-        </section>
-        <section className={styles.promise} aria-labelledby="promise-title">
-          <div className={styles.promiseCopy}>
-            <span className={styles.eyebrow}>The promise</span>
-            <h2 id="promise-title">Only the tenant can <em>close the job.</em></h2>
-            <p>If it’s still dripping, the tenant can reopen the work order in the same thread.</p>
+          <PhonePreview />
+        </div>
+      </section>
+      <HowItWorks />
+      <section className={styles.proof} aria-labelledby="proof-title">
+        <div className={`${styles.wrap} ${styles.proofGrid}`}>
+          <div className={styles.proofCopy}>
+            <h2 id="proof-title">Only the tenant can <em>close the job.</em></h2>
+            <p>After the manager marks the repair fixed, Signoff checks with the tenant. If the problem returns, the tenant can reopen the work order with a text.</p>
           </div>
           <figure className={styles.comparison}>
-            <div className={styles.photoPair}>
-              <div><div className={styles.beforePhoto} role="img" aria-label="A water stain on the ceiling above a window" /><span>Before</span></div>
-              <div><div className={styles.afterPhoto} role="img" aria-label="The same ceiling after the stain has been repaired" /><span>After · Signed off</span></div>
-              <Check size={76} className={styles.comparisonCheck} filled />
-            </div>
+            <div><div className={styles.beforePhoto} role="img" aria-label="A ceiling with a water stain above the window" /><span>Before</span></div>
+            <div><div className={styles.afterPhoto} role="img" aria-label="The same ceiling repaired" /><span>After · Signed off</span></div>
             <figcaption>Illustrative repair example</figcaption>
           </figure>
-        </section>
-        <section id="who" className={styles.audiences} aria-label="Who it’s for">
-          {audiences.map(({ name, detail }) => <article key={name}>
-            <Check size={26} />
-            <h3>{name}</h3>
-            <p>{detail}</p>
+        </div>
+      </section>
+      <section className={`${styles.wrap} ${styles.who}`} id="who" aria-labelledby="who-title">
+        <h2 id="who-title">Who it’s for</h2>
+        <div className={styles.roles}>
+          {roles.map(({ title, description }) => <article key={title}>
+            <SignoffLogo compact /><h3>{title}</h3><p>{description}</p>
           </article>)}
-        </section>
-        <section className={styles.final} aria-labelledby="final-title">
-          <Check size={520} className={styles.finalDecoration} />
-          <h2 id="final-title">Fixed means <em>fixed.</em></h2>
-          <p>{demo ? 'See the whole flow in two minutes.' : 'Start by texting your building’s repair line.'}</p>
-          <Link className={styles.finalLink} href="/app">{appLabel}</Link>
-        </section>
-      </div>
+        </div>
+      </section>
+      <section className={`${styles.wrap} ${styles.finish}`} aria-labelledby="finish-title">
+        <div className={styles.finishCard}>
+          <div><h2 id="finish-title">Fixed means <em>fixed.</em></h2>
+            <p>{demo ? 'Walk through a repair from the first text to tenant signoff.' : 'Start by texting your building’s repair line.'}</p></div>
+          <Link className={styles.finalLink} href="/app">{appLabel} <Arrow /></Link>
+        </div>
+      </section>
     </main>
     <footer className={styles.footer}>
-      <Brand compact />
-      <span>© 2026 Signoff</span>
+      <div className={`${styles.wrap} ${styles.footerInner}`}>
+        <BrandLink /><p>© 2026 Signoff</p><a href="#content">Back to top <Arrow down /></a>
+      </div>
     </footer>
   </div>;
 }

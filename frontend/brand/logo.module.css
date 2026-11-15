@@ -1,0 +1,39 @@
+@font-face {
+  font-family: 'Signoff Wordmark';
+  src: url('../landing/dancing-script.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+.logo {
+  --signoff-mark-contrast: #fff7ed;
+  display: inline-flex;
+  align-items: center;
+  gap: .24em;
+  color: var(--signoff-logo-color, #5b2a52);
+  font: 700 var(--signoff-logo-size, 2.125rem)/1 'Signoff Wordmark', 'Brush Script MT', cursive;
+  white-space: nowrap;
+}
+
+.light {
+  --signoff-mark-contrast: #2b1928;
+  color: var(--signoff-logo-color, #fff7ed);
+}
+
+.mark {
+  flex: none;
+  display: block;
+  width: .81em;
+  height: .81em;
+}
+
+.mark path {
+  fill: none;
+  stroke: var(--signoff-mark-contrast);
+  stroke-width: 3.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.wordmark { transform: translateY(-.025em); }
