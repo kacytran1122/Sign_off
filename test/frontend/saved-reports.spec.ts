@@ -20,7 +20,7 @@ test('a saved tenant report survives sign-out and shows the landlord’s update 
   expect((await page.request.get(api)).status()).toBe(401);
   const headers = { Origin: new URL(page.url()).origin };
   await signIn(page, 'invalid password');
-  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: 'The username or password is incorrect.' })).toBeVisible();
   expect((await page.request.get(api)).status()).toBe(401);
   await signIn(page, 'signoff');
   await expect(page.getByText('Tenant account', { exact: true })).toBeVisible();
