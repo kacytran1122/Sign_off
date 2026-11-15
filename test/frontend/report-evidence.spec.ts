@@ -82,7 +82,9 @@ test('the mobile report distinguishes outdoor forecast and city counts from site
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
-test('the manager sees the room linked to the outlined roof inspection area', async ({ page }) => {
+test('the manager sees a confirmed photo projection on the outlined roof', async ({ page }) => {
+  let confirmed = false;
+  const roofProjection = { point: [.54, .63], inInspectionZone: false };
   await page.route(`**${workOrderApi}`, (route) => route.fulfill({ json: {
     id: '21', status: 'open', zoneId: 'roof-lobby', demo: false,
     property: {
@@ -92,11 +94,16 @@ test('the manager sees the room linked to the outlined roof inspection area', as
       zones: [{ id: 'roof-lobby', label: 'Lobby roof area', polygon: [[.2, .2], [.3, .2], [.3, .3], [.2, .3]] }],
       roof: { imageUrl: '/assets/fixture-roof.png', outline: [[.1, .1], [.8, .1], [.8, 1.4], [.1, 1.4]], attributes: [] },
     },
-    reports: [{ id: '9', landmark_id: 'lobby', has_photo: false, description: 'Water dripping in the lobby.' }],
+    reports: [{
+      id: '9', landmark_id: 'lobby', has_photo: confirmed, description: 'Water dripping in the lobby.',
+      damagePoint: confirmed ? { anchor: { x: 1, y: 2, z: 3 }, stem: { x: 0, y: -.22, z: 0 }, confirmed: true } : undefined,
+      roofProjection,
+    }],
     timeline: [],
     plans: [{ landmarkId: 'lobby', steps: ['Check the lobby ceiling.', 'If moisture points overhead, check the highlighted roof area.'] }],
   } }));
   await page.route('**/assets/fixture-roof.png', (route) => route.fulfill({ contentType: 'image/png', body: photo }));
+  await page.route(`**${workOrderApi}/photos/9`, (route) => route.fulfill({ contentType: 'image/png', body: photo }));
   await page.goto(`/work-orders/${key}`);
 
   const plan = page.getByRole('region', { name: 'Inspection plan' });
@@ -105,5 +112,14 @@ test('the manager sees the room linked to the outlined roof inspection area', as
     'Check the lobby ceiling.', 'If moisture points overhead, check the highlighted roof area.',
   ]);
   await expect(page.getByRole('img', { name: 'Vexcel aerial view of the property roof' })).toBeVisible();
-  await expect(page.getByRole('img', { name: 'Highlighted zone: Lobby roof area' }).locator('polygon')).toHaveCount(2);
+  const zone = page.getByRole('img', { name: 'Highlighted zone: Lobby roof area' });
+  await expect(zone.locator('polygon')).toHaveCount(2);
+  const marker = page.locator('.roof-photo-pin');
+  await expect(marker).toHaveCount(0);
+
+  confirmed = true;
+  await expect(page.getByText('Estimated roof position above the confirmed photo pin')).toBeVisible();
+  await expect(page.getByText(/outside the starting inspection area/)).toBeVisible();
+  await expect(marker).toHaveAttribute('style', /left: 54%; top: 63%;/);
+  await expect(zone.locator('polygon')).toHaveCount(2);
 });

@@ -8,6 +8,7 @@ import { Webhook } from 'standardwebhooks';
 import { z } from 'zod';
 import { loadConfig, normalizeHandle } from './config.js';
 import { planRoofInspection } from './inspection.js';
+import { projectDamageOnRoof } from './roof-projection.js';
 import { damagePointInput } from './damage-point.js';
 import { startBlenderWorker } from './blender.js';
 import { startAreaWorker } from './area.js';
@@ -103,7 +104,7 @@ app.get('/api/work-orders/:key', async (c) => {
       'SELECT address, property_match, issue, aid, area FROM repair_contexts WHERE order_id=$1', [order.id]),
   ]);
   const repair = repairDetails.rows[0];
-  const { imageFile, ...roof } = cfg.property.roof;
+  const { imageFile, projection, ...roof } = cfg.property.roof;
   const showModel = !repair || repair.property_match;
   const showRoof = showModel && (!repair || repair.issue === 'leak');
   const property = showModel ? {
@@ -116,6 +117,7 @@ app.get('/api/work-orders/:key', async (c) => {
     const plan = planRoofInspection(cfg.property, point, repair?.aid);
     return plan ? [{ landmarkId: point.id, ...plan }] : [];
   }) : [];
+  const inspectionZone = showRoof && projection && cfg.property.zones.find((zone) => zone.id === order.zone_id);
   c.header('Cache-Control', 'private, no-store');
   return c.json({
     id: order.id, status: order.status, visitStart: order.visit_start, visitEnd: order.visit_end,
@@ -125,6 +127,8 @@ app.get('/api/work-orders/:key', async (c) => {
     repair: repair && { issue: repair.issue, address: repair.address, guidance: guidance[repair.aid], effects: repairEffects(repair.issue, repair.aid), aid: repair.aid, area: repair.area },
     reports: reports.rows.map(({ damagePoint, ...report }) => ({
       ...report, damagePoint: showModel && damagePoint ? damagePoint : undefined,
+      roofProjection: inspectionZone && damagePoint?.confirmed && plans.some((plan) => plan.landmarkId === report.landmark_id)
+        ? projectDamageOnRoof(cfg.property.roof, inspectionZone, damagePoint.anchor) : undefined,
     })), timeline: timeline.rows, plans,
   });
 });

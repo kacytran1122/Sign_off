@@ -8,7 +8,11 @@ import './style.css';
 type Vector = { x: number; y: number; z: number };
 type DamagePlacement = { anchor: Vector; stem: Vector; sweep?: string };
 type DamagePoint = DamagePlacement & { confirmed: true };
-type TenantReport = { id: string; landmark_id: string; description: string; has_photo: boolean; damagePoint?: DamagePoint };
+type RoofProjection = { point: [number, number]; inInspectionZone: boolean };
+type TenantReport = {
+  id: string; landmark_id: string; description: string; has_photo: boolean;
+  damagePoint?: DamagePoint; roofProjection?: RoofProjection;
+};
 type Landmark = {
   id: string; label: string; suite: string;
   anchor?: Vector;
@@ -299,18 +303,31 @@ function Interior({ ticket, active, report, access, inspectToken, onConfirm }: {
   </section>;
 }
 
-function Roof({ ticket, zone }: { ticket: Ticket; zone: Ticket['property']['zones'][number] }) {
+function Roof({ ticket, zone, projection, hasValidatedZone }: {
+  ticket: Ticket; zone: Ticket['property']['zones'][number]; projection?: RoofProjection; hasValidatedZone: boolean;
+}) {
   const { roof } = ticket.property;
+  const showZone = !roof.outline || hasValidatedZone;
+  const target = roof.imageUrl && projection?.point.every((value) => Number.isFinite(value) && value >= 0 && value <= 1)
+    ? projection : undefined;
   return <section className="panel evidence">
-    <div className="panel-head"><div><h2>Suggested inspection area</h2><p>{zone.label}{roof.captureDate && ` · Captured ${roof.captureDate}`}</p></div></div>
+    <div className="panel-head"><div><h2>{showZone ? 'Suggested inspection area' : 'Property roof'}</h2><p>{showZone ? zone.label : 'Vexcel aerial image'}{roof.captureDate && ` · Captured ${roof.captureDate}`}</p></div></div>
     <div className={`roof-image ${roof.imageUrl ? '' : 'diagram roof-diagram'}`}>
       {roof.imageUrl ? <img src={roof.imageUrl} alt="Vexcel aerial view of the property roof" /> : <div className="roof-shape" />}
-      <svg className="roof-zone" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label={`Highlighted zone: ${zone.label}`} role="img">
+      <svg className="roof-zone" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label={showZone ? `Highlighted zone: ${zone.label}` : 'Building roof outline'} role="img">
         {roof.outline && <polygon className="roof-outline" points={roof.outline.map(([x, y]) => `${x * 100},${y * 100}`).join(' ')} />}
-        <polygon points={zone.polygon.map(([x, y]) => `${x * 100},${y * 100}`).join(' ')} />
+        {showZone && <polygon points={zone.polygon.map(([x, y]) => `${x * 100},${y * 100}`).join(' ')} />}
       </svg>
+      {target && <span className="roof-photo-pin" aria-hidden="true"
+        style={{ left: `${target.point[0] * 100}%`, top: `${target.point[1] * 100}%` }} />}
     </div>
-    <p className="caption">The location gives the vendor a place to inspect. The cause is pending inspection.</p>
+    {target ? <div className="roof-photo-note">
+      <p className="roof-photo-label">Estimated roof position above the confirmed photo pin</p>
+      <p>Use this estimate as an inspection reference. Verify the source on site.
+        {!target.inInspectionZone && ' This estimate falls outside the starting inspection area.'}</p>
+    </div> : <p className="caption">{showZone
+      ? 'The location gives the vendor a place to inspect. The cause is pending inspection.'
+      : 'This roof image is available for reference. The inspection target could not be verified.'}</p>}
     {roof.attributes.length > 0 && <dl className="attributes">{roof.attributes.map((item) =>
       <div key={item.label}><dt>{item.label}</dt><dd>{item.value}{item.confidence != null && ` · ${Math.round(item.confidence * 100)}%`}</dd></div>,
     )}</dl>}
@@ -377,7 +394,7 @@ function WorkOrder({ access }: { access: string }) {
   function confirmPoint(reportId: string, damagePoint: DamagePoint) {
     setData((current) => current && {
       ...current,
-      reports: current.reports.map((entry) => entry.id === reportId ? { ...entry, damagePoint } : entry),
+      reports: current.reports.map((entry) => entry.id === reportId ? { ...entry, damagePoint, roofProjection: undefined } : entry),
     });
   }
   const [selected, setSelected] = useState<string>();
@@ -399,7 +416,8 @@ function WorkOrder({ access }: { access: string }) {
     {active && activeReport && (zone || data.property.matterportModel) && <div className="evidence-grid">
       <Interior key={data.property.matterportModel} ticket={data} active={active} report={activeReport}
         access={access} inspectToken={inspectToken} onConfirm={confirmPoint} />
-      {zone && <Roof ticket={data} zone={zone} />}
+      {zone && <Roof ticket={data} zone={zone} hasValidatedZone={!!plan}
+        projection={activeReport.damagePoint?.confirmed ? activeReport.roofProjection : undefined} />}
     </div>}
     {data.repair && <Neighborhood area={data.repair.area} />}
     {data.repair && <p className="inspection"><strong>Possible effects</strong> {data.repair.effects}</p>}

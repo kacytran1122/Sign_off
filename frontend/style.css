@@ -71,6 +71,16 @@ textarea { width: 100%; resize: vertical; border: 1px solid var(--line); padding
 .roof-shape { position: absolute; inset: 13% 11%; border: 2px solid #61726a; background: repeating-linear-gradient(0deg,#b6bbb0 0 12px,#abb4a6 12px 13px); box-shadow: 8px 6px 2px #30453a91; }
 .roof-zone { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .roof-zone polygon { fill: #f8cd6ca8; stroke: #563300; stroke-width: 1; }
+.roof-photo-pin, .roof-photo-label::before {
+  background: #a53529; border: 2px solid #fffdf4; border-radius: 50%; box-shadow: 0 0 0 1px #64261b;
+  box-sizing: border-box; width: 15px; height: 15px;
+}
+.roof-photo-pin { position: absolute; transform: translate(-50%, -50%); pointer-events: none; }
+.roof-photo-note { padding: 10px 19px; color: var(--muted); font-size: 13px; }
+.roof-photo-note p { margin: 0; }
+.roof-photo-note p + p { margin-top: 4px; }
+.roof-photo-label { display: flex; align-items: center; gap: 8px; color: #1c2923; font-weight: 700; }
+.roof-photo-label::before { content: ''; flex: 0 0 15px; }
 .caption, .notice, .inspection { padding: 10px 19px; }
 .notice { color: #874819; margin: 0; }
 .inspection { background: #e3ede3; border-radius: 10px; }

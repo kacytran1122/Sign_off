@@ -1,5 +1,6 @@
 import { readFile, rename, writeFile } from 'node:fs/promises';
 import process from 'node:process';
+import { calibrateRoof } from './calibrate-roof.mjs';
 
 const [verifiedFile, projectedFile, overlayFile, propertyFile = 'backend/config/property.local.json'] = process.argv.slice(2);
 if (!verifiedFile || !projectedFile || !overlayFile) {
@@ -37,7 +38,9 @@ property.costar = {
   buildingAreaSqFt: record.grossBuildingAreaSquareFeet || undefined,
 };
 property.roof.outline = overlay.outline;
+property.roof.projection = calibrateRoof(structure.body.features[0].geometry, overlay.outline, model, projected);
 const temporary = `${propertyFile}.${process.pid}.tmp`;
 await writeFile(temporary, JSON.stringify(property, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
 await rename(temporary, propertyFile);
 console.log(`Added CoStar, Matterport, and Vexcel evidence for ${property.landmarks.length} room targets.`);
+console.log(property.roof.projection ? 'Calibrated the Matterport to Vexcel roof projection.' : 'Roof projection unavailable for this evidence.');

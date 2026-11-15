@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 const vec3 = z.object({ x: z.number(), y: z.number(), z: z.number() });
 const point = z.tuple([z.number().min(0).max(1), z.number().min(0).max(1)]);
+const projectionAxis = z.tuple([z.number(), z.number(), z.number()]);
 const view = z.object({
   sweep: z.string().min(1),
   rotation: z.object({ x: z.number(), y: z.number() }),
@@ -27,6 +28,11 @@ const propertySchema = z.object({
     imageFile: z.string().regex(/^backend\/config\/roof-assets\/[A-Za-z0-9_-]+\.jpg$/).optional(),
     captureDate: z.string().optional(),
     outline: z.array(z.tuple([z.number(), z.number()])).min(3).optional(),
+    projection: z.object({
+      u: projectionAxis,
+      v: projectionAxis,
+      hull: z.array(z.tuple([z.number(), z.number()])).min(3),
+    }).optional(),
     attributes: z.array(z.object({
       label: z.string(),
       value: z.string(),
