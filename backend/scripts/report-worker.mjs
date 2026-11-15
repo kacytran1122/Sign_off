@@ -382,12 +382,13 @@ function matterportView(building) {
   </details>`;
 }
 
-function inspectionDecision(assessment) {
+function inspectionDecision(assessment, aid) {
   const result = cleanAssessment(assessment);
   if (!result) return '';
+  const heading = aid === 'clear' ? 'Keep clear until maintenance assesses the area' : inspectionDecisions[result.decision];
   return `<section class="card assessment-card" aria-labelledby="assessment">
     <h2 id="assessment">Inspection recommendation</h2>
-    <h3>${inspectionDecisions[result.decision]}</h3>
+    <h3>${heading}</h3>
     <p class="muted">${esc(result.reason)}</p>
     <p>${esc(result.nextStep)}</p>
   </section>`;
@@ -495,7 +496,7 @@ function reportMarkup(report, { navigationHref, navigationLabel, reference, rend
           <figcaption><strong>3D reference model</strong>${report.renderStatus === 'ready' ? `<p>${model}.</p><p class="muted">Blender rendered</p>` : ''}</figcaption>
         </figure>
       </div>
-      ${inspectionDecision(report.inspectionAssessment)}${buildingContent(report.building, report)}${neighborhood(report.area)}
+      ${inspectionDecision(report.inspectionAssessment, report.aid)}${buildingContent(report.building, report)}${neighborhood(report.area)}
     </main><footer class="shell">${esc(footer)}</footer>`;
   return { title, html };
 }

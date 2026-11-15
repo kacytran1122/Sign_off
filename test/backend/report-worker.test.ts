@@ -192,6 +192,10 @@ test('only an approved model opens a Matterport frame and the inspection decisio
   assert.match(html, /&lt;roof zone&gt;/);
   const metadata = await (await request(`/api/reports/${id}`)).json();
   assert.doesNotMatch(JSON.stringify(metadata), /should never be exposed|do not expose/);
+  assert.equal((await publish({ ...example, aid: 'clear', inspectionAssessment: assessment })).status, 204);
+  const hazard = await (await request(`/reports/${id}`)).text();
+  assert.match(hazard, /Keep clear until maintenance assesses the area/);
+  assert.doesNotMatch(hazard, /<h3>Verify the room-to-roof alignment<\/h3>/);
 
   for (const building of [
     { hasMatterport: false, publicMatterportModel: 'UnapprovedModel' },
