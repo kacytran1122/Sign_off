@@ -18,7 +18,9 @@
     "matterport:rooms": "node --env-file-if-exists=.env.costar backend/scripts/matterport-rooms.mjs",
     "test:backend": "node --test build/test/backend/*.test.js",
     "test:frontend": "playwright test --config test/frontend/playwright.config.ts",
-    "costar:evidence": "node backend/scripts/import-sponsor-evidence.mjs"
+    "costar:evidence": "node backend/scripts/import-sponsor-evidence.mjs",
+    "chatoverflow:check": "node backend/scripts/check-chatoverflow.mjs",
+    "chatoverflow:sync": "node backend/scripts/check-chatoverflow.mjs --sync"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.8",
