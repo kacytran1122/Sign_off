@@ -1,3 +1,5 @@
+import { structureFootprint } from './structure-footprint.mjs';
+
 const mercator = ([longitude, latitude]) => {
   const radius = 6_378_137;
   const radians = Math.PI / 180;
@@ -60,15 +62,31 @@ function hull(rows) {
   return [...half(points), ...half(points.toReversed())];
 }
 
-export function calibrateRoof(geometry, outline, model, projected) {
-  const rings = geometry?.type === 'Polygon' ? geometry.coordinates
-    : geometry?.type === 'MultiPolygon' && geometry.coordinates.length === 1 ? geometry.coordinates[0] : undefined;
-  if (rings?.length !== 1 || rings[0].length !== outline.length) return;
-  const world = rings[0].map(mercator);
+export function matchRoofCrop(geometry, outline, bounds) {
+  const ring = structureFootprint(geometry);
+  // The legacy importer accepted a normalized outline with no closing vertex.
+  const vertices = ring?.length === outline.length + 1 ? ring.slice(0, -1) : ring;
+  if (vertices?.length !== outline.length) return;
+  const world = vertices.map(mercator);
+  if (bounds !== undefined) {
+    // This is the actual imagery request bbox in EPSG:3857, in left/bottom/right/top order.
+    if (!Array.isArray(bounds) || bounds.length !== 4 || !bounds.every(Number.isFinite)) return;
+    const [left, bottom, right, top] = bounds;
+    if (left >= right || bottom >= top) return;
+    const normalizeX = (east) => (east - left) / (right - left);
+    const normalizeY = (north) => (top - north) / (top - bottom);
+    if (world.every(([east, north], i) => Math.abs(normalizeX(east) - outline[i][0]) < 1e-6 &&
+        Math.abs(normalizeY(north) - outline[i][1]) < 1e-6)) return { normalizeX, normalizeY };
+    return;
+  }
   const normalizeX = cropAxis(world, outline, 0);
   const normalizeY = cropAxis(world, outline, 1);
-  if (!normalizeX || !normalizeY) return;
+  if (normalizeX && normalizeY) return { normalizeX, normalizeY };
+}
 
+export function calibrateRoof(crop, model, projected) {
+  if (!crop) return;
+  const { normalizeX, normalizeY } = crop;
   const scans = new Map(model.locations.map((scan) => [scan.id, scan.position]));
   const rows = [];
   for (const sample of projected) {

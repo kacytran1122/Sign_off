@@ -1,6 +1,7 @@
 import { readFile, rename, writeFile } from 'node:fs/promises';
 import process from 'node:process';
-import { calibrateRoof } from './calibrate-roof.mjs';
+import { calibrateRoof, matchRoofCrop } from './calibrate-roof.mjs';
+import { matchStructure } from './structure-footprint.mjs';
 
 const [verifiedFile, projectedFile, overlayFile, propertyFile = 'backend/config/property.local.json'] = process.argv.slice(2);
 if (!verifiedFile || !projectedFile || !overlayFile) {
@@ -11,8 +12,10 @@ const [verified, projected, overlay, property] = await Promise.all(
   [verifiedFile, projectedFile, overlayFile, propertyFile].map(readJson),
 );
 const { row, record, model, structure } = verified;
-if (String(record.id) !== property.id || row.MatterportModelId !== property.matterportModel ||
-    model.id !== property.matterportModel || structure.body.features.length !== 1 ||
+const features = structure.body.features;
+if (String(record.id) !== property.id || String(row.PropertyId) !== property.id ||
+    row.MatterportModelId !== property.matterportModel ||
+    model.id !== property.matterportModel ||
     record.numStoriesAboveGrade !== 1 || !property.roof.imageFile) {
   throw new Error('The private property, model, roof image, and single-story CoStar record must match.');
 }
@@ -25,12 +28,17 @@ if (!polygon(overlay.outline) || property.zones.some((zone) => {
     JSON.stringify(target.polygon) !== JSON.stringify(zone.polygon);
 })) throw new Error('The footprint and target zones must use the saved Vexcel crop.');
 
-for (const landmark of property.landmarks) {
-  const shot = projected.find((point) => point.inside && point.scan.panos.some((pano) => pano.id === landmark.views[0]?.sweep));
-  if (!shot || !model.rooms.some((room) => room.id === shot.roomId)) {
-    throw new Error('A saved viewpoint could not be matched to a projected Matterport room.');
-  }
-  landmark.matterportRoomId = shot.roomId;
+const { feature, viewpoints, samples } = matchStructure(features, model, property.landmarks, projected);
+const bounds = overlay.bounds3857;
+if (features.length > 1 && bounds === undefined) {
+  throw new Error('A shared parcel requires bounds3857 from the saved Vexcel imagery request.');
+}
+const crop = matchRoofCrop(feature.geometry, overlay.outline, bounds);
+if (bounds !== undefined && !crop) {
+  throw new Error('The saved Vexcel crop does not match the selected building footprint.');
+}
+for (const [index, landmark] of property.landmarks.entries()) {
+  landmark.matterportRoomId = viewpoints[index].roomId;
 }
 property.costar = {
   storiesAboveGrade: record.numStoriesAboveGrade,
@@ -38,7 +46,13 @@ property.costar = {
   buildingAreaSqFt: record.grossBuildingAreaSquareFeet || undefined,
 };
 property.roof.outline = overlay.outline;
-property.roof.projection = calibrateRoof(structure.body.features[0].geometry, overlay.outline, model, projected);
+property.roof.projection = calibrateRoof(crop, model, samples);
+if (features.length > 1) {
+  property.roof.attributes = [
+    { label: 'Roof material', value: feature.properties?.['roof-characteristics.material.class'] },
+    { label: 'Roof shape', value: feature.properties?.['roof-characteristics.shape.value'] },
+  ].filter(({ value }) => typeof value === 'string' && value.length > 0);
+}
 const temporary = `${propertyFile}.${process.pid}.tmp`;
 await writeFile(temporary, JSON.stringify(property, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
 await rename(temporary, propertyFile);
