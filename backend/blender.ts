@@ -1,13 +1,14 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { Pool } from 'pg';
+import type { Property } from './config.js';
 import type { Aid, Issue } from './repair.js';
 import { repairScenario } from './repair-scenario.js';
 
 const execute = promisify(execFile);
 const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
-export function startBlenderWorker(db: Pool, renderer: string) {
+export function startBlenderWorker(db: Pool, renderer: string, property?: Property) {
   let job: Promise<void> | undefined;
   async function renderNext() {
     const client = await db.connect();
@@ -16,10 +17,10 @@ export function startBlenderWorker(db: Pool, renderer: string) {
       const result = await client.query<{ locked: boolean }>('SELECT pg_try_advisory_lock(75820420) AS locked');
       locked = result.rows[0].locked;
       if (!locked) return;
-      const { rows: [render] } = await client.query<{ order_id: string; subject: string; aid: Aid | null; issue?: Issue; description?: string }>(`
-        SELECT b.order_id,b.subject,b.aid,r.issue,photo.description FROM blender_renders b
+      const { rows: [render] } = await client.query<{ order_id: string; subject: string; aid: Aid | null; issue?: Issue; description?: string; landmark_id?: string; property_match?: boolean }>(`
+        SELECT b.order_id,b.subject,b.aid,r.issue,r.property_match,photo.description,photo.landmark_id FROM blender_renders b
         LEFT JOIN repair_contexts r ON r.order_id=b.order_id
-        LEFT JOIN LATERAL (SELECT description FROM reports WHERE order_id=b.order_id ORDER BY id LIMIT 1) photo ON true
+        LEFT JOIN LATERAL (SELECT description,landmark_id FROM reports WHERE order_id=b.order_id ORDER BY id LIMIT 1) photo ON true
         WHERE b.status='queued' AND b.run_after <= now() ORDER BY b.order_id LIMIT 1
       `);
       if (!render) return;
@@ -27,7 +28,8 @@ export function startBlenderWorker(db: Pool, renderer: string) {
         const args = [render.subject];
         if (render.aid) {
           args.push(render.aid);
-          if (render.issue) args.push(repairScenario(render.issue, render.aid, render.description));
+          const location = render.property_match ? property?.landmarks.find((point) => point.id === render.landmark_id)?.label : undefined;
+          if (render.issue) args.push(repairScenario(render.issue, render.aid, render.description, location));
         }
         const { stdout } = await execute(renderer, args, {
           encoding: 'buffer', timeout: 120_000, maxBuffer: 4 * 1024 * 1024,

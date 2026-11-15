@@ -33,7 +33,7 @@ type ReportRow = {
 
 export function reportSnapshot(property: Config['property'], row: ReportRow) {
   const point = property.landmarks.find((landmark) => landmark.id === row.landmarkId);
-  const scenario = repairScenario(row.issue, row.aid, row.description);
+  const scenario = repairScenario(row.issue, row.aid, row.description, row.property_match ? point?.label : undefined);
   const inspection = point && row.property_match && scenario === 'ceiling-leak' ? planRoofInspection(property, point, row.aid) : undefined;
   const area = reportArea.safeParse(row.area).data;
   if (area?.latitude !== undefined) area.latitude = Number(area.latitude.toFixed(3));
@@ -58,7 +58,7 @@ export function reportSnapshot(property: Config['property'], row: ReportRow) {
 export function startReportPublisher(db: Pool, config: Config) {
   if (!config.reportPublish) return;
   const { origin, token } = config.reportPublish;
-  const evidenceVersion = createHash('sha256').update('report-v3:').update(JSON.stringify(config.property)).digest('hex');
+  const evidenceVersion = createHash('sha256').update('report-v4:').update(JSON.stringify(config.property)).digest('hex');
   let active: Promise<void> | undefined;
 
   async function publish() {

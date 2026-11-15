@@ -36,7 +36,7 @@ await frontend.prepare();
 const roofImage = cfg.property.roof.imageFile ? await readFile(cfg.property.roof.imageFile) : undefined;
 const db = new pg.Pool({ connectionString: cfg.databaseUrl, max: 6 });
 await db.query(await readFile('backend/db/schema.sql', 'utf8'));
-const stopBlender = cfg.blenderRenderer && startBlenderWorker(db, cfg.blenderRenderer);
+const stopBlender = cfg.blenderRenderer && startBlenderWorker(db, cfg.blenderRenderer, cfg.property);
 const stopArea = cfg.repairContext && startAreaWorker(db, cfg);
 const stopReports = cfg.repairContext && startReportPublisher(db, cfg);
 
