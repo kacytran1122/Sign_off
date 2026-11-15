@@ -330,20 +330,18 @@ function neighborhood(area) {
   return `<section class="section" aria-labelledby="neighborhood">
     <div class="section-title"><h2 id="neighborhood">Neighborhood conditions</h2>${area?.city ? `<p class="muted">${esc(area.city)}</p>` : ''}</div>
     ${heatContent(area)}
-    <div class="context-grid">
-      <section class="card"><h3>Nearby 311 reports</h3>
-        ${coverage ? `<dl class="local-counts">
-          <div><dt>Water-related</dt><dd>${rounded(coverage.indicators.water)}</dd></div>
-          <div><dt>Waste-related</dt><dd>${rounded(coverage.indicators.waste)}</dd></div>
-          ${coverage.indicators.rodentMentions !== undefined ? `<div><dt>Rodent mentions</dt><dd>${rounded(coverage.indicators.rodentMentions)}</dd></div>` : ''}
-        </dl><p class="muted">Source: ${records} within 1 km from ${esc(coverage.start_date)} to ${esc(coverage.through_date)}.</p>` : '<p class="muted">Nearby 311 report counts are unavailable.</p>'}
-        ${coverage?.indicators.rodentMentions !== undefined ? '<p class="muted">Rodent mentions are Houston 311 requests in the same area and dates that mention mice or rats.</p>' : ''}
-        <p class="muted">An on-site check can establish whether mice or rats are present. Tell maintenance if you see rodents, droppings, or gnaw marks.</p>
-      </section>
-      <section class="card"><h3>Neighborhood satellite view</h3>
-        ${center ? `<iframe title="Neighborhood satellite map" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin" src="https://www.arcgis.com/apps/Embed/index.html?webmap=86265e5a4bbb4187a59719cf134e0018&amp;center=${center}&amp;level=18&amp;scale=true&amp;zoom=true&amp;disable_scroll=true"></iframe><p class="muted attribution">Approximate location · <a href="https://www.arcgis.com/home/item.html?id=86265e5a4bbb4187a59719cf134e0018" rel="noreferrer">Esri World Imagery</a></p>` : '<p class="muted">Neighborhood map unavailable.</p>'}
-      </section>
-    </div>
+    <section class="card satellite-card"><h3>Neighborhood satellite view</h3>
+      ${center ? `<iframe class="satellite-map" title="Neighborhood satellite map" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin" src="https://www.arcgis.com/apps/Embed/index.html?webmap=86265e5a4bbb4187a59719cf134e0018&amp;center=${center}&amp;level=18&amp;scale=true&amp;zoom=true&amp;disable_scroll=true"></iframe><p class="muted attribution">Approximate location · <a href="https://www.arcgis.com/home/item.html?id=86265e5a4bbb4187a59719cf134e0018" rel="noreferrer">Esri World Imagery</a></p>` : '<p class="muted">Neighborhood map unavailable.</p>'}
+    </section>
+    <section class="card"><h3>Nearby 311 reports</h3>
+      ${coverage ? `<dl class="local-counts">
+        <div><dt>Water-related</dt><dd>${rounded(coverage.indicators.water)}</dd></div>
+        <div><dt>Waste-related</dt><dd>${rounded(coverage.indicators.waste)}</dd></div>
+        ${coverage.indicators.rodentMentions !== undefined ? `<div><dt>Rodent mentions</dt><dd>${rounded(coverage.indicators.rodentMentions)}</dd></div>` : ''}
+      </dl><p class="muted">Source: ${records} within 1 km from ${esc(coverage.start_date)} to ${esc(coverage.through_date)}.</p>` : '<p class="muted">Nearby 311 report counts are unavailable.</p>'}
+      ${coverage?.indicators.rodentMentions !== undefined ? '<p class="muted">Rodent mentions are Houston 311 requests in the same area and dates that mention mice or rats.</p>' : ''}
+      <p class="muted">An on-site check can establish whether mice or rats are present. Tell maintenance if you see rodents, droppings, or gnaw marks.</p>
+    </section>
   </section>`;
 }
 
@@ -415,7 +413,7 @@ main{padding-block:clamp(1.45rem,4vw,3rem)}
 .model-card{overflow:hidden;padding:clamp(.75rem,1.5vw,1rem)}.model-card img{display:block;width:100%;height:auto;aspect-ratio:1.56;object-fit:contain;background:#f4edf0;border-radius:.64rem}
 .model-card figcaption{padding:.72rem .45rem .12rem}.model-card figcaption strong{display:block;font-size:1rem}
 .model-card figcaption p{margin-top:.25rem}.model-pending{min-height:8rem;padding:.75rem}
-.source-grid,.context-grid,.chart-grid{display:grid;gap:.9rem;grid-template-columns:repeat(2,minmax(0,1fr))}
+.source-grid,.chart-grid{display:grid;gap:.9rem;grid-template-columns:repeat(2,minmax(0,1fr))}
 .source-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr));align-items:stretch}
 .evidence-card h3{color:#65324e}.path-card{margin-top:.9rem}.path-card ol,.evidence-notes{padding-left:1.25rem;margin:.75rem 0}
 .evidence-list{margin-top:.45rem}.evidence-list>div{display:flex;justify-content:space-between;gap:.7rem;padding:.36rem 0;border-bottom:1px solid #efe5eb}.evidence-list dt{color:#614e5d;font-size:.83rem}.evidence-list dd{text-align:right;font-size:.89rem;font-weight:600}
@@ -429,9 +427,10 @@ main{padding-block:clamp(1.45rem,4vw,3rem)}
 .chart details{font-size:.83rem;margin-top:.36rem}.chart summary{cursor:pointer;color:#632c50;padding:.18rem 0}
 .chart table{width:100%;border-collapse:collapse;margin-top:.4rem;text-align:left}.chart td,.chart th{padding:.2rem .3rem;border-bottom:1px solid #eee3eb}.chart td:last-child,.chart th:last-child{text-align:right}.chart tbody th{font-weight:400}
 .estimate{background:#f4edf1;border-radius:.58rem;margin-top:.8rem;padding:.66rem .8rem}.estimate strong{font-weight:650}
-iframe{display:block;width:100%;height:13rem;border:0;border-radius:.65rem;background:#f4edef;margin-top:.72rem}
+.satellite-card{margin-bottom:.9rem}
+.satellite-map{display:block;width:100%;height:clamp(24rem,44vw,39rem);border:0;border-radius:.65rem;background:#f4edef;margin-top:.72rem}
 footer{padding:0 0 2rem;color:#614e5d;font-size:.83rem}
-@media(max-width:730px){.action-grid,.context-grid,.chart-grid{grid-template-columns:minmax(0,1fr)}.shell{width:calc(100% - 1.3rem)}.chart-ticks text{font-size:23px}}
+@media(max-width:730px){.action-grid,.chart-grid{grid-template-columns:minmax(0,1fr)}.shell{width:calc(100% - 1.3rem)}.chart-ticks text{font-size:23px}}
 `;
 
 function reportHtml(report, uuid) {
