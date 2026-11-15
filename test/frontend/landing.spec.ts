@@ -20,12 +20,9 @@ test('the landing page introduces Signoff and leads to the repair workspace', as
   const review = showcase.getByRole('tab', { name: 'Manager review' });
   await review.click();
   const order = showcase.getByRole('tabpanel', { name: 'Manager review' });
-  await expect(order.getByText('Suite 402 · Conference room window')).toBeVisible();
-  await expect(order.getByText('West roof edge', { exact: false })).toBeVisible();
-  for (const image of await order.getByRole('img').all()) {
-    await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
-  }
-  const fullCapture = order.getByRole('link', { name: 'Open the full work order capture' });
+  const reviewCapture = order.getByRole('img', { name: /Signoff repair report/ });
+  await expect.poll(() => reviewCapture.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
+  const fullCapture = order.getByRole('link', { name: 'Enlarge report capture' });
   const captureHref = await fullCapture.getAttribute('href');
   expect(captureHref).toBeTruthy();
   expect((await page.request.get(captureHref!)).ok()).toBe(true);
@@ -40,16 +37,18 @@ test('the landing page introduces Signoff and leads to the repair workspace', as
   await expect(page).toHaveURL(/#verification$/);
   await expect(page.locator('#verification')).toBeInViewport();
   const proof = page.getByRole('region', { name: 'Tenants get the final say.' });
-  await expect(proof.getByRole('img')).toHaveCount(4);
-  for (const name of [/leaking PVC drain trap/i, /crack in the glass/i]) {
+  await expect(proof.getByRole('img')).toHaveCount(3);
+  for (const name of [/water damage on the kitchen ceiling/i, /leaking PVC drain trap/i, /crack in the glass/i]) {
     const image = proof.getByRole('img', { name });
     await image.scrollIntoViewIfNeeded();
     await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
   }
 
+  await expect(proof.getByRole('link', { name: 'Lance Cheung / USDA' })).toHaveAttribute('href', /flickr\.com\/photos\/usdagov/);
   await expect(proof.getByRole('link', { name: 'Tony Webster' })).toHaveAttribute('href', /commons\.wikimedia\.org/);
   await expect(proof.getByRole('link', { name: 'Santeri Viinamäki' })).toHaveAttribute('href', /commons\.wikimedia\.org/);
   await expect(page.getByText('Text a photo. Get updates. Confirm the fix.')).toHaveCount(0);
+  await expect(page.getByText('Product screens captured in Signoff with sample data.')).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Book a call' })).toHaveCount(0);
   const closing = page.getByRole('region', { name: 'Keep every repair on record.' });
   await expect(closing.getByRole('link', { name: 'Open Signoff' })).toHaveAttribute('href', '/app');

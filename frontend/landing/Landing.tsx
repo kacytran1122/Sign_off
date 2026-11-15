@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { SignoffLogo } from '../brand/SignoffLogo';
 import leakingSink from './assets/leaking-sink.webp';
 import crackedWindow from './assets/cracked-window.webp';
+import ceilingDamage from './assets/usda-ceiling-damage.webp';
 import { PhonePreview } from './PhonePreview';
 import { RepairExample } from './RepairExample';
 import styles from './landing.module.css';
@@ -52,29 +53,26 @@ export default function Landing({ previewOnly = false }: { previewOnly?: boolean
             <h2 id="proof-title">Tenants get the <em>final say.</em></h2>
             <p>Confirm the fix or reopen the work order by text.</p>
           </div>
-          <figure className={styles.comparison}>
-            <div>
-              <div className={`${styles.repairImage} ${styles.beforePhoto}`} role="img" aria-label="A ceiling with a water stain above the window" />
-              <span>Ceiling stain</span>
-            </div>
-            <div>
-              <div className={`${styles.repairImage} ${styles.afterPhoto}`} role="img" aria-label="The same ceiling repaired" />
-              <span>Ceiling repaired · Tenant signoff</span>
-            </div>
-            <div>
+          <div className={styles.repairPhotos}>
+            <figure className={styles.leadPhoto}>
+              <Image className={styles.repairImage} src={ceilingDamage} alt="A resident pointing at visible water damage on the kitchen ceiling" unoptimized />
+              <figcaption className={styles.photoLabel}>Ceiling water damage
+                <small><a href="https://www.flickr.com/photos/usdagov/51849972354">Lance Cheung / USDA</a> · <a href="https://commons.wikimedia.org/wiki/File:20220129-RD-LSC-0360_(51849972354).jpg">Public domain</a></small>
+              </figcaption>
+            </figure>
+            <figure>
               <Image className={styles.repairImage} src={leakingSink} alt="Leaking PVC drain trap beneath a bathroom sink" unoptimized />
-              <div className={styles.photoLabel}>Leaking sink pipe
-                <small><a href="https://commons.wikimedia.org/wiki/File:Leaking_PVC_Pipe_Under_Sink_-_P_Trap_(52842956605).jpg">Tony Webster</a> · <a href="https://creativecommons.org/licenses/by/2.0/">CC BY 2.0</a></small>
-              </div>
-            </div>
-            <div>
+              <figcaption className={styles.photoLabel}>Leaking sink pipe
+                <small><a href="https://commons.wikimedia.org/wiki/File:Leaking_PVC_Pipe_Under_Sink_-_P_Trap_(52842956605).jpg">Tony Webster</a> · <a href="https://creativecommons.org/licenses/by/2.0/">CC BY 2.0</a> · Cropped</small>
+              </figcaption>
+            </figure>
+            <figure>
               <Image className={styles.repairImage} src={crackedWindow} alt="A crack in the glass of a window pane" unoptimized />
-              <div className={styles.photoLabel}>Cracked window
-                <small><a href="https://commons.wikimedia.org/wiki/File:Crack_on_window_20180404.jpg">Santeri Viinamäki</a> · <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a></small>
-              </div>
-            </div>
-            <figcaption>The ceiling comparison and courtyard artwork were created for Signoff. The ceiling pair shows a sample repair. The sourced photographs are resized and cropped for display.</figcaption>
-          </figure>
+              <figcaption className={styles.photoLabel}>Cracked window
+                <small><a href="https://commons.wikimedia.org/wiki/File:Crack_on_window_20180404.jpg">Santeri Viinamäki</a> · <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a> · Cropped</small>
+              </figcaption>
+            </figure>
+          </div>
         </div>
       </section>
       <section className={`${styles.wrap} ${styles.finish}`} aria-labelledby="finish-title">
