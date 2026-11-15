@@ -230,6 +230,11 @@ test('Tiger Data weather coverage and Houston rodent requests retain their sourc
   const area = {
     city: 'Houston', store: 'TimescaleDB',
     observations: { hours: 22, lowFeelsLikeF: 63, highFeelsLikeF: 82, lowHumidity: 48, highHumidity: 83 },
+    timeZone: 'America/Chicago',
+    history: [
+      { time: '2025-11-14T22:00:00Z', feelsLikeF: 82 },
+      { time: '2025-11-14T20:00:00Z', feelsLikeF: 63 },
+    ],
     coverage: {
       start_date: '2026-08-17', through_date: '2026-11-14', store: 'TimescaleDB',
       indicators: { water: 6, waste: 4, rodentMentions: 1 },
@@ -241,6 +246,9 @@ test('Tiger Data weather coverage and Houston rodent requests retain their sourc
   };
   assert.equal((await publish({ ...example, area })).status, 204);
   const html = await (await request(`/reports/${id}`)).text();
+  assert.match(html, /24-hour weather summary/);
+  assert.match(html, /Latest recorded hour <time datetime="2025-11-14T22:00:00\.000Z">Nov 14, 2025, 4:00 PM<\/time>/);
+  assert.doesNotMatch(html, /Past 24 hours|Recent outdoor readings/);
   assert.match(html, /Hours with readings<\/dt><dd>22 \/ 24/);
   assert.match(html, /63°F–82°F/);
   assert.match(html, /48%–83%/);

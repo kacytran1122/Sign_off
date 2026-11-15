@@ -347,17 +347,22 @@ function lineChart(id, title, style, points, formatter, maximumGap) {
   </figure>`;
 }
 
-function observationSummary(observations, store) {
+function observationSummary(observations, store, latestHour, timeZone) {
   if (!observations) return '';
   const { hours, lowFeelsLikeF, highFeelsLikeF, lowHumidity, highHumidity } = observations;
   const source = store === 'TimescaleDB' ? 'Tiger Data (TimescaleDB)' : store;
+  const date = Number.isFinite(latestHour) ? new Date(latestHour) : undefined;
+  const latestLabel = date ? new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'medium', timeStyle: 'short', timeZone,
+  }).format(date) : '';
   return `<div class="observation-summary">
-    <h4>Past 24 hours</h4>
+    <h4>24-hour weather summary</h4>
     <dl class="weather-current">
       <div><dt>Hours with readings</dt><dd>${hours} / 24</dd></div>
       <div><dt>Hourly feels-like range</dt><dd>${temperature(lowFeelsLikeF)}–${temperature(highFeelsLikeF)}</dd></div>
       <div><dt>Hourly humidity range</dt><dd>${rounded(lowHumidity)}%–${rounded(highHumidity)}%</dd></div>
     </dl>
+    ${date ? `<p class="muted">Latest recorded hour <time datetime="${date.toISOString()}">${esc(latestLabel)}</time>.</p>` : ''}
     <p class="muted">Outdoor readings averaged by hour.${source ? ` Stored in ${esc(source)}.` : ''}</p>
   </div>`;
 }
@@ -377,13 +382,13 @@ function heatContent(area) {
   return `<section class="card weather-card" aria-labelledby="weather-heading">
     <h3 id="weather-heading">Outdoor heat and humidity</h3>
     ${currentValues.length ? `<dl class="weather-current">${currentValues.map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join('')}</dl>${current.time ? `<p class="muted">Observed ${esc(current.time.replace('T', ' '))} local time.</p>` : ''}` : '<p class="muted">Current outdoor conditions are unavailable.</p>'}
-    ${observationSummary(area?.observations, area?.store)}
+    ${observationSummary(area?.observations, area?.store, history.at(-1)?.[0], zone)}
     <div class="chart-grid">
-      ${lineChart('observed', 'Recent outdoor readings', 'observed', history, formatter, 1.5 * hour)}
-      ${lineChart('forecast', 'Forecast feels-like highs', 'forecast', forecast, forecastTimeFormat, 1.5 * day)}
+      ${lineChart('observed', 'Hourly outdoor readings', 'observed', history, formatter, 1.5 * hour)}
+      ${lineChart('forecast', 'Forecast feels-like highs from this snapshot', 'forecast', forecast, forecastTimeFormat, 1.5 * day)}
     </div>
     ${area?.heat ? `<div class="estimate"><p><strong>Seasonal model estimate ${temperature(area.heat.typicalHighF)}</strong> feels like</p><p class="muted">Average validation error ${rounded(area.heat.validationMaeF, 1)}°F${area.heat.trainedThrough ? ` · Trained through ${esc(area.heat.trainedThrough)}` : ''}.</p></div>` : ''}
-    <p class="muted attribution">Indoor conditions require an on-site check.${history.length ? ` Recent readings shown in ${esc(zone)}${area.store && !area.observations ? ` and stored in ${esc(area.store)}` : ''}.` : ''}${weather ? ' <a href="https://open-meteo.com/" rel="noreferrer">Weather by Open-Meteo</a>.' : ''}</p>
+    <p class="muted attribution">Indoor conditions require an on-site check.${history.length ? ` Hourly readings shown in ${esc(zone)}${area.store && !area.observations ? ` and stored in ${esc(area.store)}` : ''}.` : ''}${weather ? ' <a href="https://open-meteo.com/" rel="noreferrer">Weather by Open-Meteo</a>.' : ''}</p>
   </section>`;
 }
 
