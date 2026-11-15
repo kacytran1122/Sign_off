@@ -79,9 +79,8 @@
   padding-block: clamp(2.5rem, 5.5vw, 4.5rem);
 }
 .heroCopy { max-width: 35rem; }
-.hero h1 { font-size: clamp(3.9rem, 7.25vw, 7.05rem); line-height: .88; }
+.hero h1 { font-size: clamp(3.55rem, 6.6vw, 6.45rem); line-height: .91; }
 .hero h1 em { display: block; }
-.heroCopy .heroDescription { margin-top: 1rem; color: #544150; font-size: clamp(1.01rem, 1.65vw, 1.2rem); }
 .actions { display: flex; flex-wrap: wrap; gap: .58rem; margin-top: 1.18rem; }
 .actions a { min-height: 2.95rem; }
 .heroPhone { min-width: 0; }
@@ -108,10 +107,12 @@
 .repairImage { display: block; width: 100%; height: auto; aspect-ratio: 4 / 3; object-fit: cover; border-radius: .73rem; }
 .beforePhoto, .afterPhoto { background: #dfd1be url('./ceiling-repair.jpg') no-repeat left center / 200% auto; }
 .afterPhoto { background-position: right center; }
-.comparison span, .comparison figcaption { color: var(--quiet); font-size: .79rem; }
-.comparison span { padding: 0 .26rem .16rem; }
+.comparison span, .photoLabel, .comparison figcaption { color: var(--quiet); font-size: .79rem; }
+.comparison span, .photoLabel { padding: 0 .26rem .16rem; }
+.photoLabel small { display: block; margin-top: .25rem; font-size: .72rem; }
+.photoLabel a { text-decoration: underline; text-underline-offset: .16em; }
 .comparison > div:nth-child(2) span { color: var(--plum); font-weight: 650; }
-.comparison figcaption { grid-column: 1 / -1; text-align: right; font-size: .75rem; }
+.comparison figcaption { grid-column: 1 / -1; text-align: left; font-size: .75rem; }
 
 .finish { padding-block: clamp(2.8rem, 6vw, 5rem); }
 .finishCard {
@@ -153,7 +154,7 @@
   .navigation { grid-template-columns: 1fr auto; padding-block: .55rem .52rem; row-gap: .38rem; }
   .navLinks { grid-column: 1 / -1; grid-row: 2; gap: 1.1rem; font-size: .82rem; }
   .navigation .primary { min-height: 2.35rem; font-size: .82rem; padding-inline: .78rem; }
-  .hero h1 { font-size: clamp(3.12rem, 13vw, 3.85rem); }
+  .hero h1 { font-size: clamp(2.85rem, 11.3vw, 3.85rem); }
   .actions a { padding-inline: .78rem; font-size: .84rem; }
   .footerInner { display: grid; grid-template-columns: 1fr auto; }
   .footerInner p { grid-row: 2; }

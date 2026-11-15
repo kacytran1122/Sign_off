@@ -2,7 +2,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { SignoffLogo } from '../brand/SignoffLogo';
 import leakingSink from './assets/leaking-sink.webp';
-import looseWindowLatch from './assets/loose-window-latch.webp';
+import crackedWindow from './assets/cracked-window.webp';
 import { PhonePreview } from './PhonePreview';
 import { RepairExample } from './RepairExample';
 import styles from './landing.module.css';
@@ -17,24 +17,23 @@ function BrandLink() {
   return <Link className={styles.brand} href="/" aria-label="Signoff home"><SignoffLogo /></Link>;
 }
 
-export default function Landing({ demo, previewOnly = false }: { demo: boolean; previewOnly?: boolean }) {
+export default function Landing({ previewOnly = false }: { previewOnly?: boolean }) {
   const destination = previewOnly ? '#example' : '/app';
-  const appLabel = previewOnly ? 'Explore the example' : demo ? 'Try the demo' : 'Open Signoff';
+  const appLabel = previewOnly ? 'Explore the repair' : 'Open Signoff';
   return <div className={styles.landing}>
     <a className={styles.skipLink} href="#content">Skip to content</a>
     <header className={styles.header}>
       <nav className={`${styles.wrap} ${styles.navigation}`} aria-label="Main navigation">
         <BrandLink />
         <div className={styles.navLinks}><a href="#how">How it works</a><a href="#verification">Tenant signoff</a></div>
-        <a className={styles.primary} href={destination}>{previewOnly ? 'See the demo' : 'Get started'} <Arrow /></a>
+        <a className={styles.primary} href={destination}>{previewOnly ? 'See the repair' : 'Get started'} <Arrow /></a>
       </nav>
     </header>
     <main id="content" tabIndex={-1}>
       <section className={styles.hero} aria-labelledby="headline">
         <div className={`${styles.wrap} ${styles.heroGrid}`}>
           <div className={styles.heroCopy}>
-            <h1 id="headline">Report a repair. <em>See it through.</em></h1>
-            <p className={styles.heroDescription}>Text a photo. Get updates. Confirm the fix.</p>
+            <h1 id="headline">The repair isn’t done until <em>the tenant says so.</em></h1>
             <div className={styles.actions}>
               <a className={styles.primary} href={destination}>{appLabel} <Arrow /></a>
               <a className={styles.secondary} href="#how">See how it works <Arrow down /></a>
@@ -60,23 +59,27 @@ export default function Landing({ demo, previewOnly = false }: { demo: boolean; 
             </div>
             <div>
               <div className={`${styles.repairImage} ${styles.afterPhoto}`} role="img" aria-label="The same ceiling repaired" />
-              <span>Ceiling repaired · Signed off</span>
+              <span>Ceiling repaired · Tenant signoff</span>
             </div>
             <div>
-              <Image className={styles.repairImage} src={leakingSink} alt="Water dripping from a sink drain pipe into the cabinet" unoptimized />
-              <span>Leaking sink pipe</span>
+              <Image className={styles.repairImage} src={leakingSink} alt="Leaking PVC drain trap beneath a bathroom sink" unoptimized />
+              <div className={styles.photoLabel}>Leaking sink pipe
+                <small><a href="https://commons.wikimedia.org/wiki/File:Leaking_PVC_Pipe_Under_Sink_-_P_Trap_(52842956605).jpg">Tony Webster</a> · <a href="https://creativecommons.org/licenses/by/2.0/">CC BY 2.0</a></small>
+              </div>
             </div>
             <div>
-              <Image className={styles.repairImage} src={looseWindowLatch} alt="A window latch with a raised screw and loose mounting plate" unoptimized />
-              <span>Loose window latch</span>
+              <Image className={styles.repairImage} src={crackedWindow} alt="A crack in the glass of a window pane" unoptimized />
+              <div className={styles.photoLabel}>Cracked window
+                <small><a href="https://commons.wikimedia.org/wiki/File:Crack_on_window_20180404.jpg">Santeri Viinamäki</a> · <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a></small>
+              </div>
             </div>
-            <figcaption>Illustrative repair photos</figcaption>
+            <figcaption>The ceiling comparison and courtyard artwork were created for Signoff. The ceiling pair shows a sample repair. The sourced photographs are resized and cropped for display.</figcaption>
           </figure>
         </div>
       </section>
       <section className={`${styles.wrap} ${styles.finish}`} aria-labelledby="finish-title">
         <div className={styles.finishCard}>
-          <h2 id="finish-title">One text <em>gets it started.</em></h2>
+          <h2 id="finish-title">Keep every repair <em>on record.</em></h2>
           <a className={styles.primary} href={destination}>{appLabel} <Arrow /></a>
         </div>
       </section>

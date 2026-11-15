@@ -56,6 +56,19 @@
   background: #fffcf9a6;
 }
 .panel[hidden] { display: none; }
+.panel:has(.workOrder) { aspect-ratio: auto; }
+.workOrder { display: grid; width: 100%; padding: clamp(.65rem, 2.3vw, 1.35rem); gap: .85rem; }
+.workOrder header { display: flex; justify-content: space-between; align-items: end; gap: .6rem; color: var(--signoff-ink); }
+.workOrder header p { color: var(--signoff-muted); font-size: .81rem; font-weight: 650; }
+.workOrder h3 { font: 400 clamp(1.9rem, 4vw, 3.2rem)/1 var(--signoff-font-serif); }
+.workOrder header span { padding: .2rem .55rem; color: #22493d; background: #e2f1e9; border-radius: 99px; font-size: .78rem; }
+.details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; }
+.details figure { border: 1px solid #e8ddd6; border-radius: .65rem; overflow: hidden; background: #fffaf8; }
+.details img { display: block; width: 100%; height: auto; }
+.details figcaption { padding: .52rem .65rem; color: var(--signoff-muted); font-size: .85rem; }
+.details figcaption strong { display: block; color: var(--signoff-ink); }
+.workOrder a { justify-self: start; min-height: 2rem; color: var(--signoff-plum); font-size: .85rem; font-weight: 650; text-decoration: underline; text-underline-offset: .2em; }
+
 .capture {
   display: block;
   width: 100%;
@@ -71,4 +84,8 @@
   .tabs button { font-size: .71rem; }
   .tabs button img { aspect-ratio: 1.35; }
   .panel { aspect-ratio: 1.19; }
+}
+
+@media (max-width: 520px) {
+  .details { grid-template-columns: minmax(0, 1fr); }
 }

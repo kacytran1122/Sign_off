@@ -4,7 +4,7 @@ test('the landing page introduces Signoff and leads to the repair workspace', as
   const response = await page.goto('/');
   expect(response?.ok()).toBe(true);
   await expect(page.getByRole('heading', {
-    level: 1, name: 'Report a repair. See it through.',
+    level: 1, name: 'The repair isn’t done until the tenant says so.',
   })).toBeVisible();
 
   await page.getByRole('link', { name: 'See how it works', exact: true }).click();
@@ -19,8 +19,16 @@ test('the landing page introduces Signoff and leads to the repair workspace', as
   await expect.poll(() => photo.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
   const review = showcase.getByRole('tab', { name: 'Manager review' });
   await review.click();
-  const order = showcase.getByRole('tabpanel', { name: 'Manager review' }).getByRole('img');
-  await expect.poll(() => order.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
+  const order = showcase.getByRole('tabpanel', { name: 'Manager review' });
+  await expect(order.getByText('Suite 402 · Conference room window')).toBeVisible();
+  await expect(order.getByText('West roof edge', { exact: false })).toBeVisible();
+  for (const image of await order.getByRole('img').all()) {
+    await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
+  }
+  const fullCapture = order.getByRole('link', { name: 'Open the full work order capture' });
+  const captureHref = await fullCapture.getAttribute('href');
+  expect(captureHref).toBeTruthy();
+  expect((await page.request.get(captureHref!)).ok()).toBe(true);
   await review.press('ArrowRight');
   const verification = showcase.getByRole('tab', { name: 'Tenant confirmation' });
   await expect(verification).toHaveAttribute('aria-selected', 'true');
@@ -33,14 +41,18 @@ test('the landing page introduces Signoff and leads to the repair workspace', as
   await expect(page.locator('#verification')).toBeInViewport();
   const proof = page.getByRole('region', { name: 'Tenants get the final say.' });
   await expect(proof.getByRole('img')).toHaveCount(4);
-  for (const name of [/water dripping from a sink drain pipe/i, /window latch with a raised screw/i]) {
+  for (const name of [/leaking PVC drain trap/i, /crack in the glass/i]) {
     const image = proof.getByRole('img', { name });
     await image.scrollIntoViewIfNeeded();
     await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
   }
 
-  const closing = page.getByRole('region', { name: 'One text gets it started.' });
-  await expect(closing.getByRole('link', { name: 'Try the demo' })).toHaveAttribute('href', '/app');
+  await expect(proof.getByRole('link', { name: 'Tony Webster' })).toHaveAttribute('href', /commons\.wikimedia\.org/);
+  await expect(proof.getByRole('link', { name: 'Santeri Viinamäki' })).toHaveAttribute('href', /commons\.wikimedia\.org/);
+  await expect(page.getByText('Text a photo. Get updates. Confirm the fix.')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Book a call' })).toHaveCount(0);
+  const closing = page.getByRole('region', { name: 'Keep every repair on record.' });
+  await expect(closing.getByRole('link', { name: 'Open Signoff' })).toHaveAttribute('href', '/app');
 
   await page.getByRole('link', { name: 'Get started', exact: true }).click();
   await expect(page).toHaveURL(/\/app$/);
@@ -48,10 +60,10 @@ test('the landing page introduces Signoff and leads to the repair workspace', as
   await expect(page.getByRole('button', { name: 'Tenant', exact: true })).toBeVisible();
 });
 
-test('the landing page offers the demo without horizontal overflow on mobile', async ({ page }) => {
+test('the landing page opens the repair workspace without horizontal overflow on mobile', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 844 });
   await page.goto('/');
-  const demo = page.getByRole('link', { name: 'Try the demo', exact: true }).first();
+  const demo = page.getByRole('link', { name: 'Open Signoff', exact: true }).first();
   await expect(demo).toBeInViewport();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
   await expect(demo).toHaveAttribute('href', '/app');
@@ -77,7 +89,7 @@ test('the phone previews a Signoff mention and repeats the conversation automati
   await phone.scrollIntoViewIfNeeded();
   await expect(pause).toBeVisible();
   await expect(report).toBeVisible();
-  const hero = page.getByRole('region', { name: 'Report a repair. See it through.' });
+  const hero = page.getByRole('region', { name: 'The repair isn’t done until the tenant says so.' });
   await expect(hero.getByRole('figure')).toHaveCount(1);
   await expect(phone.locator('figcaption')).toHaveCount(0);
   await expect(pause).toHaveText('');
