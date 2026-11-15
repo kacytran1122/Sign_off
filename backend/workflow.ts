@@ -87,7 +87,7 @@ async function addReportPhoto(db: PoolClient, cfg: Config, tenant: string, order
   await record(db, orderId, 'photo_added', 'Tenant added a photo to the report.');
   const { rows: [order] } = await db.query<Order>(`SELECT w.access_key,w.inspection_key FROM work_orders w
     LEFT JOIN repair_contexts r ON w.id=r.order_id WHERE w.id=$1 AND COALESCE(r.property_match,true)`, [orderId]);
-  const review = order && photoReviewUrl(cfg, order, report.landmark_id);
+  const review = order && photoReviewUrl(cfg, order, report.landmark_id, report.id);
   await notify(db, cfg.manager, `${code(orderId)} · The tenant added this photo to the report.${review ? `\nMatch its location in Matterport: ${review}` : ''}`);
   await queueManagerPhoto(db, cfg.manager, report.id);
   await notify(db, tenant, `I attached the photo to ${code(orderId)}.`);
@@ -142,7 +142,7 @@ async function openReport(db: PoolClient, cfg: Config, handle: string, pending: 
     const visit = { start: rows[0].visit_start.toISOString(), end: rows[0].visit_end.toISOString() };
     await notify(db, handle, `${code(order.id)} inspection: ${formatVisit(visit, repairTimeZone(repair?.address, cfg.property.timeZone))}.`);
   }
-  const photoReview = pending.photo && (!repair || repair.propertyMatch) ? photoReviewUrl(cfg, order, point.id) : undefined;
+  const photoReview = pending.photo && (!repair || repair.propertyMatch) ? photoReviewUrl(cfg, order, point.id, report.id) : undefined;
   if (repair) {
     if (cfg.reportPublish) await notify(db, handle, `${code(order.id)} · Full repair report: ${evidenceUrl}`, order.id);
     await notify(db, cfg.manager, managerReport({

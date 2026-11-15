@@ -11,6 +11,10 @@ const photo = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aVx8AAAAASUVORK5CYII=',
   'base64',
 );
+const windowPhoto = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGMIKDgAAAKUAYFYV6d7AAAAAElFTkSuQmCC',
+  'base64',
+);
 const anchor = { x: 2, y: 3, z: 4 };
 const damagePoint = { anchor, stem: { x: 0, y: -.22, z: 0 }, sweep: 'review-uuid', confirmed: true };
 const sdkEvents = (page: Page) => page.evaluate(() => (window as Window & { sdkEvents?: unknown[][] }).sdkEvents ?? []);
@@ -102,7 +106,7 @@ async function stubMatterport(page: Page, waitForViewer = false, hasExteriorSpla
   }));
 }
 
-async function stubWorkOrder(page: Page, alreadyConfirmed = false) {
+async function stubWorkOrder(page: Page, alreadyConfirmed = false, sharedOrder = false) {
   let saved = alreadyConfirmed ? damagePoint : undefined;
   const requests: { authorization: string | null; payload: unknown }[] = [];
   await page.route(`**${api}`, (route) => route.fulfill({ json: {
@@ -116,11 +120,17 @@ async function stubWorkOrder(page: Page, alreadyConfirmed = false) {
         stem: { x: 0, y: .2, z: 0 }, views: [{ sweep: 'room-sweep', rotation: { x: 0, y: 0 } }],
       }],
     },
-    reports: [{ id: '21', landmark_id: 'room', has_photo: true, description: 'Damage above the door.', damagePoint: saved }],
+    reports: [
+      { id: '21', landmark_id: 'room', has_photo: true, description: 'Damage above the door.', damagePoint: sharedOrder ? undefined : saved },
+      ...(sharedOrder ? [{ id: '22', landmark_id: 'room', has_photo: true, description: 'Damage near the window.', damagePoint: saved }] : []),
+    ],
     timeline: [],
   } }));
   await page.route(`**${photoUrl}`, (route) => route.fulfill({ contentType: 'image/png', body: photo }));
-  await page.route(`**${markerUrl}`, async (route) => {
+  const sharedPhotoUrl = `${api}/photos/22`;
+  if (sharedOrder) await page.route(`**${sharedPhotoUrl}`, (route) => route.fulfill({ contentType: 'image/png', body: windowPhoto }));
+  const reviewUrl = sharedOrder ? `${sharedPhotoUrl}/damage-point` : markerUrl;
+  await page.route(`**${reviewUrl}`, async (route) => {
     const request = route.request();
     expect(request.method()).toBe('PUT');
     requests.push({ authorization: await request.headerValue('authorization'), payload: request.postDataJSON() });
@@ -172,6 +182,29 @@ test('the manager reviews the tenant photo and confirms only a model surface', a
   await expect.poll(() => sdkEvents(page)).toEqual(expect.arrayContaining([
     ['tags', [expect.objectContaining({ label: 'Confirmed damage spot', anchorPosition: anchor })]],
   ]));
+});
+
+test('a manager link selects the photo from the matching report on a shared work order', async ({ page }) => {
+  await stubMatterport(page);
+  const requests = await stubWorkOrder(page, false, true);
+  const expectedPhoto = `${api}/photos/22`;
+  const photoResponse = page.waitForResponse(response => new URL(response.url()).pathname === expectedPhoto);
+  await page.goto(`${workOrder}#inspect=${editKey}&report=22`);
+
+  await page.getByRole('button', { name: 'Match photo to model' }).click();
+  await expect(page.getByRole('img', { name: 'Tenant photo for matching the damage spot' })).toHaveAttribute('src', expectedPhoto);
+  expect(await (await photoResponse).body()).toEqual(windowPhoto);
+  const picker = page.getByRole('button', { name: 'Select a surface on the Matterport model' });
+  await picker.click({ position: { x: 25, y: 45 } });
+  await expect(page.getByRole('status').filter({ hasText: 'Choose a visible surface in the model.' })).toBeVisible();
+  await picker.click({ position: { x: 90, y: 120 } });
+  await page.getByRole('button', { name: 'Confirm damage spot' }).click();
+  await expect(page.getByText('Damage spot confirmed against the tenant photo.')).toBeVisible();
+  expect(requests).toHaveLength(1);
+
+  await page.goto(`${workOrder}#inspect=${editKey}&report=99`);
+  await expect(page.getByText('The linked tenant report is unavailable. Choose a report below.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Match photo to model' })).toHaveCount(0);
 });
 
 test('the confirmed spot survives reload without allowing edits from the work order key', async ({ page }) => {

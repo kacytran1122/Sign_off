@@ -220,8 +220,12 @@ async function runEvidenceCases(t: TestContext, pool: pg.Pool, url: string, dir:
     );
     await send(tenant, `PHOTO L-${order.id}`);
     await send(tenant, '', jpeg);
-    assert.match(await lastText(cfg.manager), /Match its location in Matterport/);
-    assert((await lastText(cfg.manager)).includes(`#inspect=${order.inspection_key}`));
+    const { rows: [report] } = await pool.query<{ id: string }>(
+      'SELECT id FROM reports WHERE order_id=$1 AND photo IS NOT NULL ORDER BY id DESC LIMIT 1', [order.id],
+    );
+    const managerNotice = await lastText(cfg.manager);
+    assert.match(managerNotice, /Match its location in Matterport/);
+    assert(managerNotice.includes(`#inspect=${order.inspection_key}&report=${report.id}`));
     assert(!(await lastText(tenant)).includes(order.inspection_key));
   });
   await t.test('a separate photo preserves a typed address suggestion until the tenant confirms', async () => {
@@ -233,9 +237,13 @@ async function runEvidenceCases(t: TestContext, pool: pg.Pool, url: string, dir:
     assert.equal((await pool.query('SELECT 1 FROM reports WHERE message_id=$1', [id])).rowCount, 0);
     await send(tenant, 'YES');
     const { rows } = await pool.query(`
-      SELECT r.photo,r.photo_type,o.target FROM reports r JOIN outbox o ON o.photo_report_id=r.id WHERE r.message_id=$1
+      SELECT r.id,r.photo,r.photo_type,o.target,w.inspection_key FROM reports r
+      JOIN outbox o ON o.photo_report_id=r.id JOIN work_orders w ON w.id=r.order_id WHERE r.message_id=$1
     `, [id]);
-    assert.deepEqual(rows, [{ photo: jpeg.bytes, photo_type: 'image/jpeg', target: cfg.manager }]);
+    assert.equal(rows.length, 1);
+    const [{ id: reportId, inspection_key: reviewKey, ...photoJob }] = rows;
+    assert.deepEqual(photoJob, { photo: jpeg.bytes, photo_type: 'image/jpeg', target: cfg.manager });
+    assert((await lastText(cfg.manager)).includes(`#inspect=${reviewKey}&report=${reportId}`));
   });
 
   await t.test('standard reports send the exact tenant photo to the manager in both message formats', async () => {

@@ -23,9 +23,9 @@ export function confirmedDamageAnchor(input: unknown, modelId: string | undefine
   return result.success && result.data.modelId === modelId ? result.data.anchor : undefined;
 }
 
-export function photoReviewUrl(config: Config, order: { access_key: string; inspection_key: string }, landmarkId: string) {
+export function photoReviewUrl(config: Config, order: { access_key: string; inspection_key: string }, landmarkId: string, reportId: string) {
   if (!config.property.matterportModel || !config.matterportKey ||
       !config.property.landmarks.some((landmark) => landmark.id === landmarkId)) return;
   const workspace = managerWorkspaceUrl(config, order.access_key);
-  if (workspace) return `${workspace}#inspect=${order.inspection_key}`;
+  if (workspace) return `${workspace}#${new URLSearchParams({ inspect: order.inspection_key, report: reportId })}`;
 }

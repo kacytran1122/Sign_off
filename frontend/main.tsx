@@ -450,9 +450,13 @@ function Neighborhood({ area }: { area: Area | null | undefined }) {
 export function WorkOrder({ access }: { access: string }) {
   const { data, error, setData } = usePoll<Ticket>(`/api/work-orders/${encodeURIComponent(access)}`);
   const [inspectToken, setInspectToken] = useState<string>();
+  const [selected, setSelected] = useState<string>();
   useEffect(() => {
     function syncToken() {
-      setInspectToken(new URLSearchParams(window.location.hash.slice(1)).get('inspect') ?? undefined);
+      const link = new URLSearchParams(window.location.hash.slice(1));
+      const token = link.get('inspect') ?? undefined;
+      setInspectToken(token);
+      setSelected(token ? link.get('report') || undefined : undefined);
     }
     syncToken();
     window.addEventListener('hashchange', syncToken);
@@ -464,9 +468,8 @@ export function WorkOrder({ access }: { access: string }) {
       reports: current.reports.map((entry) => entry.id === reportId ? { ...entry, damagePoint, roofProjection: undefined } : entry),
     });
   }
-  const [selected, setSelected] = useState<string>();
   if (!data) return <><Header /><main className="page"><p role="status">{error || 'Loading work order…'}</p></main></>;
-  const activeReport = data.reports.find((report) => report.id === selected) ?? data.reports[0];
+  const activeReport = selected ? data.reports.find((report) => report.id === selected) : data.reports[0];
   const active = data.property.landmarks.find((point) => point.id === activeReport?.landmark_id);
   const zone = data.property.zones.find((roof) => roof.id === data.zoneId);
   const plan = data.plans?.find((item) => item.landmarkId === active?.id);
@@ -477,6 +480,7 @@ export function WorkOrder({ access }: { access: string }) {
       <Badge status={data.status} />
     </section>
     {error && <p role="status" className="notice">{error}</p>}
+    {selected && !activeReport && <p role="status" className="notice">The linked tenant report is unavailable. Choose a report below.</p>}
     {data.visitStart && data.visitEnd && <p className="inspection"><strong>Inspection</strong> {dateTime(data.visitStart, data.property.timeZone)} to {dateTime(data.visitEnd, data.property.timeZone)} · {data.property.timeZone}</p>}
     {plan && <InspectionPlan plan={plan} property={data.property} />}
     {active && activeReport && (zone || data.property.matterportModel) && <div className="evidence-grid">
