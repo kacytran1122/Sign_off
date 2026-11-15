@@ -5,7 +5,7 @@ import { identifyLeak } from './ai.js';
 import { normalizeHandle, type Config, type Landmark } from './config.js';
 import { type Message, type Photo } from './photon.js';
 import { formatVisit, looksLikeVisit, parseVisit, type Visit } from './schedule.js';
-import { belongsToProperty, guidance, repairTimeZone, reportAddress, safeAid, type Aid, type Issue } from './repair.js';
+import { belongsToProperty, guidance, repairTimeZone, reportAddress, safeAid, suggestPropertyAddress, type Aid, type Issue } from './repair.js';
 import { managerReport, repairReportUrl } from './reports.js';
 import { runIntake, type IntakeResult } from './agents/intake.js';
 import { warnAgentFailure, type Model } from './agents/runtime.js';
@@ -25,12 +25,15 @@ type Pending = {
   proposedFix?: boolean;
   orderId?: string;
   photoOrderId?: string;
+  address?: string;
+  addressConfirmed?: boolean;
+  addressReview?: { candidate?: string; interpreted: Interpretation['interpreted'] };
 };
 type Order = { id: string; status: string; access_key: string; inspection_key: string };
 type Conversation = { active_order: string | null; pending: Pending };
 type Repair = { address: string; propertyMatch: boolean; issue: Issue; aid: Aid };
 const code = (id: string) => `L-${id}`;
-const photoOrderReply = /^(?:photo\s+)?L-([1-9]\d{0,12})$/i;
+export const photoOrderReply = /^(?:photo\s+)?L-([1-9]\d{0,12})$/i;
 const rescheduleNoticeMs = 72 * 60 * 60 * 1000;
 
 export function canRescheduleInspection(visitStart: Date | null, now: number) {
@@ -214,7 +217,8 @@ async function managerReply(db: PoolClient, cfg: Config, handle: string, message
     await record(db, id, 'repair_reported', 'Manager reported a repair. Asking tenants to verify.');
     for (const tenant of await reporters(db, id)) {
       const unresolved = order.issue === 'damage' ? 'Still broken' : 'Still leaking';
-      await notify(db, tenant, `Your manager marked ${code(id)} repaired. Reply “Resolved ${code(id)}” or “${unresolved} ${code(id)}”.`);
+      const tag = cfg.demo ? '' : '@signoff ';
+      await notify(db, tenant, `Your manager marked ${code(id)} repaired. Reply “${tag}Resolved ${code(id)}” or “${tag}${unresolved} ${code(id)}”.`);
     }
     return notify(db, handle, `I asked the affected tenants to verify ${code(id)}.`);
   }
@@ -283,15 +287,22 @@ export async function prepareReport(db: PoolClient, cfg: Config, message: Messag
   if (orderForPhoto && photo) return { orderPhoto: { orderId: orderForPhoto, photo } };
   const picked = prior.choices && /^\d+$/.test(message.text) ? prior.choices[Number(message.text) - 1] : undefined;
   const mergedPhoto = photo ?? (prior.photo && { bytes: Buffer.from(prior.photo.base64, 'base64'), type: prior.photo.type });
-  const text = [prior.text, picked ? '' : message.text].filter(Boolean).join('\n').slice(-2000);
+  const acceptedAddress = confirmReply.test(message.text) ? prior.addressReview?.candidate : undefined;
+  const enteredAddress = reportAddress(message.text);
+  const previousAddress = prior.addressReview ? undefined : prior.address ?? reportAddress(prior.text ?? '');
+  const address = acceptedAddress ?? enteredAddress ?? previousAddress;
+  const text = [prior.text, picked || acceptedAddress ? '' : message.text].filter(Boolean).join('\n').slice(-2000);
   const pending: Pending = {
-    text, messageId: prior.messageId ?? message.id,
+    text, messageId: prior.messageId ?? message.id, address,
+    addressConfirmed: !!acceptedAddress || (!enteredAddress && !!previousAddress && prior.addressConfirmed) || undefined,
     photo: mergedPhoto && { base64: mergedPhoto.bytes.toString('base64'), type: mergedPhoto.type },
   };
-  // A room number completes the original report and keeps the assessment of its photo.
+  // Address and room replies keep the original assessment, unless there is a new photo.
   const locationOnly = !!picked && !photo;
-  const savedAgent = locationOnly ? prior.agentReport : undefined;
-  const { interpreted, agent } = savedAgent ? { interpreted: savedAgent.interpreted, agent: savedAgent }
+  const reviewingAddress = !photo && prior.addressReview;
+  const savedAgent = locationOnly || reviewingAddress ? prior.agentReport : undefined;
+  const savedInterpretation = savedAgent?.interpreted ?? (reviewingAddress ? reviewingAddress.interpreted : undefined);
+  const { interpreted, agent } = savedInterpretation ? { interpreted: savedInterpretation, agent: savedAgent }
     : await interpretReport(db, cfg, handle, text, mergedPhoto, landmarks, locationOnly ? undefined : model);
   if (agent?.kind === 'report') pending.agentReport = agent;
   return { pending, interpreted, agent, landmarks, point: landmarks.find((point) => point.id === picked) ?? interpreted.landmark };
@@ -320,9 +331,10 @@ export async function handleMessage(db: PoolClient, cfg: Config, message: Messag
     RETURNING active_order, pending
   `, [handle, message.space, message.agent, photonProject ?? null]);
   const conversation = rows[0];
+  const tagReminder = photonProject ? ' Begin your reply with @signoff.' : '';
   if (/^start[.!]?$/i.test(message.text)) {
     return notify(db, handle, participant.role === 'tenant'
-      ? cfg.repairContext ? 'Send a photo, the street address and the room where you see the damage.' : 'Send a photo and tell me where you see the leak.'
+      ? (cfg.repairContext ? 'Send a photo, the street address and the room where you see the damage.' : 'Send a photo and tell me where you see the leak.') + tagReminder
       : 'You’re connected. I’ll text you about new work orders.');
   }
   if (participant.role === 'manager') {
@@ -360,7 +372,7 @@ export async function handleMessage(db: PoolClient, cfg: Config, message: Messag
   }
   if (prepared.agent?.kind === 'reply') {
     await savePending(db, handle, prepared.agent.awaitingDetails ? prepared.pending : {});
-    return notify(db, handle, prepared.agent.message);
+    return notify(db, handle, prepared.agent.message + (prepared.agent.awaitingDetails ? tagReminder : ''));
   }
   const { interpreted } = prepared;
   if (!interpreted.isLeak && !(cfg.repairContext && interpreted.isDamage)) {
@@ -369,15 +381,22 @@ export async function handleMessage(db: PoolClient, cfg: Config, message: Messag
   }
   let repair: Repair | undefined;
   if (cfg.repairContext) {
-    const address = reportAddress(prepared.pending.text ?? '');
-    if (!address) {
-      await savePending(db, handle, prepared.pending);
-      const visible = interpreted.visibleAddress && reportAddress(interpreted.visibleAddress);
-      return notify(db, handle, visible ? `I can read ${visible} in the photo. Please confirm the street address, city and state.`
-        : 'What’s the full street address, city and state?');
+    const { address, addressConfirmed } = prepared.pending;
+    const propertyMatch = !!address && belongsToProperty(address, cfg.property.address);
+    if (!address || (!propertyMatch && !addressConfirmed)) {
+      const visible = interpreted.visibleAddress ? reportAddress(interpreted.visibleAddress) : undefined;
+      const suggested = address ? suggestPropertyAddress(address, cfg.property.address) : undefined;
+      const candidate = suggested ?? address ?? visible;
+      const reply = photonProject ? '@signoff YES' : 'YES';
+      await savePending(db, handle, { ...prepared.pending, addressReview: { candidate, interpreted } });
+      if (candidate) {
+        const reading = suggested ? `Did you mean ${suggested}?`
+          : address ? `I read ${address}.` : `I can read ${candidate} in the photo.`;
+        return notify(db, handle, `${reading} Reply ${reply} if that’s correct, or send the full street address, city and state.`);
+      }
+      return notify(db, handle, 'Please confirm the full street address, city and state.' + tagReminder);
     }
     const issue = interpreted.isDamage ? 'damage' : 'leak';
-    const propertyMatch = belongsToProperty(address, cfg.property.address);
     repair = { address, propertyMatch, issue, aid: safeAid(`${prepared.pending.text} ${interpreted.description}`, issue, interpreted.temporaryAid) };
     if (!propertyMatch) {
       const point = prepared.point ?? { id: 'reported-location', suite: participant.suite!, label: 'Reported area', zoneId: 'reported', aliases: [], views: [] };
@@ -387,7 +406,7 @@ export async function handleMessage(db: PoolClient, cfg: Config, message: Messag
   if (!prepared.point) {
     const { landmarks, pending } = prepared;
     await savePending(db, handle, { ...pending, choices: landmarks.map((point) => point.id) });
-    return notify(db, handle, `Where do you see it? Reply with a number.\n${landmarks.map((point, i) => `${i + 1}. ${point.label}`).join('\n')}`);
+    return notify(db, handle, `Where do you see it? Reply with a number.${tagReminder}\n${landmarks.map((point, i) => `${i + 1}. ${point.label}`).join('\n')}`);
   }
   return fileReport(db, cfg, handle, prepared, prepared.point, repair);
 }

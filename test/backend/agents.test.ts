@@ -69,7 +69,7 @@ test('multi-agent workflow over a real database', { timeout: 60_000 }, async (t)
     const cfg = await loadConfig({
       DEMO_MODE: 'true', DATABASE_URL: 'postgres://unused', AGENT_MODE: 'true', OPENAI_API_KEY: 'test', OPENAI_MODEL: 'test-model',
     });
-    const repairCfg: Config = { ...cfg, repairContext: true };
+    const repairCfg: Config = { ...cfg, repairContext: true, property: { ...cfg.property, address: '100 Main St, Chicago, IL' } };
 
     async function deliver(config: Config, agents: Agents | undefined, input: Message) {
       const prepared = await prepareReport(db, config, input, undefined, agents?.model);
@@ -98,14 +98,19 @@ test('multi-agent workflow over a real database', { timeout: 60_000 }, async (t)
           observation: 'Reporter describes dripping water and sparks near an outlet.', visibleAddress: null,
         }]]],
       });
-      await deliver(repairCfg, agents, message('tenant', 'Water dripping by the conference room window and sparks at the outlet\n100 Main St, Chicago, IL'));
+      await deliver(repairCfg, agents, message('tenant', 'Water dripping by the conference room window and sparks at the outlet\n100 Mian St, Chicago, IL'));
+      assert.match(await outbox('tenant'), /Did you mean 100 Main St, Chicago, IL\?/);
+      assert.equal((await db.query('SELECT count(*)::int AS n FROM work_orders')).rows[0].n, 0);
+      await deliver(repairCfg, agents, message('tenant', 'YES'));
 
       const refusal = lastOutputs(requests.find((entry) => entry.agent === 'intake' && lastOutputs(entry.request).length)!.request)[0];
       assert.match(refusal, /consult_safety_triage before filing/);
-      const { rows: [order] } = await db.query<{ id: string; aid: string }>(
-        'SELECT w.id, c.aid FROM work_orders w JOIN repair_contexts c ON c.order_id=w.id ORDER BY w.id DESC LIMIT 1');
+      const { rows: [order] } = await db.query<{ id: string; aid: string; address: string; property_match: boolean }>(
+        'SELECT w.id, c.aid, c.address, c.property_match FROM work_orders w JOIN repair_contexts c ON c.order_id=w.id ORDER BY w.id DESC LIMIT 1');
       orderId = order.id;
       assert.equal(order.aid, 'clear', 'safeAid must override the model when sparks are reported');
+      assert.equal(order.address, '100 Main St, Chicago, IL');
+      assert.equal(order.property_match, true);
       const timeline = await events(orderId);
       assert.match(timeline.find((event) => event.action === 'agent_triage')!.detail, /emergency · hazards: electrical/);
       assert.equal(timeline.find((event) => event.action === 'agent_trace')!.detail,
@@ -258,6 +263,31 @@ test('multi-agent workflow over a real database', { timeout: 60_000 }, async (t)
       await deliver(cfg, undefined, message('manager', 'YES'));
       assert.equal(await status(), 'awaiting_confirmation');
       assert.match(await outbox('tenant'), new RegExp(`marked L-${orderId} repaired`));
+    });
+
+    await t.test('the manager can ask questions without a mention or model', async () => {
+      await deliver(cfg, undefined, message('manager', `Is L-${orderId} closed yet?`));
+      assert.match(await outbox('manager'), /waiting for tenant confirmation/);
+      assert.equal((await db.query('SELECT status FROM work_orders WHERE id=$1', [orderId])).rows[0].status, 'awaiting_confirmation');
+
+      await db.query('UPDATE repair_contexts SET area=$2 WHERE order_id=$1', [orderId, {
+        weather: { current: { time: '2026-11-15T14:00', apparent_temperature: 81.3 } },
+        coverage: { start_date: '2026-11-01', through_date: '2026-11-14', indicators: { water: 2, waste: 7 } },
+      }]);
+      await deliver(cfg, undefined, message('manager', `What about heat and rats near L-${orderId}?`));
+      const answer = await outbox('manager');
+      assert.match(answer, /Outdoor feels-like temperature: 81°F/);
+      assert.match(answer, /2 water and 7 waste reports within 1 km/);
+      assert.match(answer, /inspection is needed to verify indoor conditions or signs of rodents/);
+
+      const { rows: [foreign] } = await db.query<{ id: string }>(
+        "INSERT INTO work_orders(property_id,zone_id,status) VALUES('unrelated-property','other','open') RETURNING id");
+      await deliver(cfg, undefined, message('manager', `Where is L-${foreign.id}?`));
+      assert.match(await outbox('manager'), /couldn’t find L-\d+ for this property/);
+
+      const broken: Agents = { model: { next: async () => { throw new Error('network down'); } } };
+      await deliver(cfg, broken, message('manager', `When is the visit for L-${orderId}?`));
+      assert.match(await outbox('manager'), /No inspection is scheduled\./);
     });
   } finally {
     db.release();

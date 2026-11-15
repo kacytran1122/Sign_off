@@ -49,17 +49,53 @@ export function reportAddress(text: string) {
   return `${street[0]}, ${place[1].trim()}, ${place[2].toUpperCase()}${place[3] ? ` ${place[3]}` : ''}`;
 }
 
-function addressKey(value: string) {
-  return value.toLowerCase().replace(/\b(road|street|avenue|drive|boulevard)\b/g,
+function addressParts(value: string) {
+  const zip = /\b[a-z]{2}\s+(\d{5})(?:-\d{4})?[\s.,]*$/i.exec(value)?.[1];
+  const key = value.toLowerCase().replace(/\b[a-z]{2}\s+\d{5}(?:-\d{4})?[\s.,]*$/i,
+    (suffix) => suffix.slice(0, 2)).replace(/\b(road|street|avenue|drive|boulevard)\b/g,
     (part) => ({ road: 'rd', street: 'st', avenue: 'ave', drive: 'dr', boulevard: 'blvd' })[part]!)
-    .replace(/\b\d{5}(?:-\d{4})?\b/g, '').replace(/[^a-z0-9-]+/g, ' ').trim();
+    .replace(/[^a-z0-9-]+/g, ' ').trim();
+  const [number, ...words] = key.split(' ');
+  return { number, words, zip };
+}
+
+function sameNumber(reported: string, configured: string) {
+  if (reported === configured) return true;
+  const range = /^(\d+)-(\d+)$/.exec(configured);
+  return !!(range && /^\d+$/.test(reported) && +reported >= +range[1] && +reported <= +range[2]);
 }
 
 export function belongsToProperty(address: string, property: string) {
-  const target = addressKey(address);
-  const configured = addressKey(property);
-  if (target === configured) return true;
-  const range = /^(\d+)-(\d+) (.+)$/.exec(configured);
-  const reported = /^(\d+) (.+)$/.exec(target);
-  return !!(range && reported && range[3] === reported[2] && +reported[1] >= +range[1] && +reported[1] <= +range[2]);
+  const target = addressParts(address);
+  const configured = addressParts(property);
+  return sameNumber(target.number, configured.number) &&
+    (!target.zip || !configured.zip || target.zip === configured.zip) &&
+    target.words.join(' ') === configured.words.join(' ');
+}
+
+function singleTypo(typed: string, known: string) {
+  if (Math.min(typed.length, known.length) < 4 || Math.abs(typed.length - known.length) > 1) return false;
+  const offset = Array.from(typed).findIndex((letter, i) => letter !== known[i]);
+  if (offset < 0) return typed.length !== known.length;
+  if (typed.length > known.length) return typed.slice(offset + 1) === known.slice(offset);
+  if (typed.length < known.length) return typed.slice(offset) === known.slice(offset + 1);
+  if (typed.slice(offset + 1) === known.slice(offset + 1)) return true;
+  return typed[offset] === known[offset + 1] && typed[offset + 1] === known[offset] &&
+    typed.slice(offset + 2) === known.slice(offset + 2);
+}
+
+/** A suggestion requires an explicit tenant confirmation before it can be used as evidence. */
+export function suggestPropertyAddress(address: string, property: string) {
+  const target = addressParts(address);
+  const configured = addressParts(property);
+  if (!/^\d+(?:-\d+)?$/.test(target.number) || !sameNumber(target.number, configured.number) ||
+      target.words.length < 3 || target.words.length !== configured.words.length ||
+      target.words.at(-1) !== configured.words.at(-1)) return;
+  const differences = target.words.flatMap((word, index) => word === configured.words[index] ? [] : [index]);
+  const zipDiffers = !!(target.zip && configured.zip && target.zip !== configured.zip);
+  if (zipDiffers) {
+    if (!differences.length && singleTypo(target.zip!, configured.zip!)) return property;
+    return;
+  }
+  if (differences.length === 1 && singleTypo(target.words[differences[0]], configured.words[differences[0]])) return property;
 }
