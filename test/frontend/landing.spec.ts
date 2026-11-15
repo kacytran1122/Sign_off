@@ -9,10 +9,14 @@ test('the landing page introduces Signoff and leads to the repair workspace', as
 
   await page.getByRole('link', { name: 'See how it works', exact: true }).click();
   await expect(page).toHaveURL(/#how$/);
-  await expect(page.getByRole('heading', { name: 'What happens after you text.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'From photo to signoff.' })).toBeVisible();
 
-  const showcase = page.getByRole('region', { name: 'Follow one repair.' });
-  await expect(showcase.getByRole('tab', { name: 'Tenant report' })).toHaveAttribute('aria-selected', 'true');
+  const showcase = page.getByRole('region', { name: 'From photo to signoff.' });
+  const report = showcase.getByRole('tab', { name: 'Tenant report' });
+  await report.click();
+  await expect(report).toHaveAttribute('aria-selected', 'true');
+  const photo = showcase.getByRole('tabpanel', { name: 'Tenant report' }).getByRole('img');
+  await expect.poll(() => photo.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
   const review = showcase.getByRole('tab', { name: 'Manager review' });
   await review.click();
   const order = showcase.getByRole('tabpanel', { name: 'Manager review' }).getByRole('img');
@@ -24,11 +28,11 @@ test('the landing page introduces Signoff and leads to the repair workspace', as
   const timeline = showcase.getByRole('tabpanel', { name: 'Tenant confirmation' }).getByRole('img');
   await expect.poll(() => timeline.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
 
-  await page.getByRole('banner').getByRole('link', { name: 'Who it’s for', exact: true }).click();
-  await expect(page).toHaveURL(/#who$/);
-  await expect(page.locator('#who')).toBeInViewport();
+  await page.getByRole('banner').getByRole('link', { name: 'Tenant signoff', exact: true }).click();
+  await expect(page).toHaveURL(/#verification$/);
+  await expect(page.locator('#verification')).toBeInViewport();
 
-  const closing = page.getByRole('region', { name: 'Try it with a sample repair.' });
+  const closing = page.getByRole('region', { name: 'See a repair through.' });
   await expect(closing.getByRole('link', { name: 'Try the demo' })).toHaveAttribute('href', '/app');
 
   await page.getByRole('link', { name: 'Get started', exact: true }).click();
