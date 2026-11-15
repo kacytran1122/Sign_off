@@ -1,7 +1,7 @@
 import type { PoolClient } from 'pg';
 import { z } from 'zod';
 import type { Config } from '../config.js';
-import { repairTimeZone } from '../repair.js';
+import { repairTimeZone, type Aid, type Issue } from '../repair.js';
 import { formatVisit } from '../schedule.js';
 
 /** Read-only order views shared by the scheduler, evidence and follow-up agents. */
@@ -15,11 +15,11 @@ export const orderNumber = (value: string) => value.replace(/^L-/i, '');
 
 type OrderRow = {
   id: string; status: string; zone_id: string; created_at: Date; visit_start: Date | null; visit_end: Date | null;
-  address: string | null; issue: string | null; aid: string | null; time_zone: string | null; reports: number;
+  address: string | null; issue: Issue | null; aid: Aid | null; property_match: boolean | null; time_zone: string | null; reports: number;
 };
 
 const ORDER_SELECT = `SELECT w.id, w.status, w.zone_id, w.created_at, w.visit_start, w.visit_end,
-  c.address, c.issue, c.aid, c.area->>'timeZone' AS time_zone,
+  c.address, c.issue, c.aid, c.property_match, c.area->>'timeZone' AS time_zone,
   (SELECT count(*)::int FROM reports r WHERE r.order_id=w.id) AS reports
   FROM work_orders w LEFT JOIN repair_contexts c ON c.order_id=w.id`;
 

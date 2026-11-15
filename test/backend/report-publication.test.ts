@@ -23,6 +23,9 @@ test('shared repair summaries include rounded neighborhood and matched building 
   assert.deepEqual(report.area, { latitude: 29.76, longitude: -95.37, city: 'HOUSTON' });
   assert.doesNotMatch(JSON.stringify(report), /private\.example|PrivateSponsorModel|private@example/);
   assert.equal(reportSnapshot(property, { ...row, property_match: false }).building, undefined);
+  const publicProperty = { ...property, matterportPublicView: true };
+  assert.equal(reportSnapshot(publicProperty, row).building?.publicMatterportModel, property.matterportModel);
+  assert.equal(reportSnapshot(publicProperty, { ...row, property_match: false }).building, undefined);
 });
 
 test('a photo-matched inspection point changes the shared plan without exposing the pin', async () => {
@@ -50,8 +53,12 @@ test('a photo-matched inspection point changes the shared plan without exposing 
   };
   const initial = reportSnapshot(property, row).building?.inspectionSteps;
   assert.match(initial?.[1] ?? '', /check the Vexcel area labeled/);
+  assert.equal(reportSnapshot(property, row).inspectionAssessment.decision, 'roof-zone');
   const report = reportSnapshot(property, { ...row, damagePoint: pin });
   assert.match(report.building?.inspectionSteps?.[1] ?? '', /use the projected spot/);
+  assert.equal(report.inspectionAssessment.decision, 'projected-roof-check');
+  assert.match(report.inspectionAssessment.reason, /Matterport spot projects within the verified Vexcel roof zone/);
+  assert.match(report.inspectionAssessment.nextStep, /Trace the moisture indoors first/);
   assert.doesNotMatch(JSON.stringify(report), /PrivateSponsorModel|PrivateSweep|PrivateRoom|private\.example|damagePoint|anchor/);
   assert.deepEqual(reportSnapshot(property, { ...row, damagePoint: { ...pin, modelId: 'OldModel' } }).building?.inspectionSteps, initial);
   assert.deepEqual(reportSnapshot(property, { ...row, damagePoint: { ...pin, confirmed: false } }).building?.inspectionSteps, initial);
@@ -66,5 +73,21 @@ test('a photo-matched inspection point changes the shared plan without exposing 
   assert.deepEqual(reportSnapshot(property, { ...row, linkedDamagePoints: linkedDamagePoints.slice(0, 1) }).building?.inspectionSteps, initial);
   const ownPin = { ...pin, anchor: { x: 3, y: 2, z: -1.5 } };
   assert.match(reportSnapshot(property, { ...row, damagePoint: ownPin, linkedDamagePoints }).building?.inspectionSteps?.[1] ?? '', /projects outside the mapped roof area/);
+  assert.equal(reportSnapshot(property, { ...row, damagePoint: ownPin }).inspectionAssessment.decision, 'alignment-check');
   assert.equal(reportSnapshot(property, { ...row, linkedDamagePoints, description: 'A sink leak' }).scenario, 'sink-leak');
+
+  const unmatched = reportSnapshot(property, { ...row, property_match: false, damagePoint: pin });
+  assert.equal(unmatched.inspectionAssessment.decision, 'indoor-check');
+  assert.match(unmatched.inspectionAssessment.reason, /address has no verified match/);
+  assert.equal(unmatched.building, undefined);
+
+  const sink = reportSnapshot(property, { ...row, description: 'A sink leak', damagePoint: pin });
+  assert.equal(sink.inspectionAssessment.decision, 'indoor-check');
+  assert.equal(sink.building?.inspectionSteps, undefined);
+
+  const upstairs = reportSnapshot({ ...property, costar: { storiesAboveGrade: 2 } }, { ...row, aid: 'clear', damagePoint: pin });
+  assert.equal(upstairs.inspectionAssessment.decision, 'indoor-check');
+  assert.match(upstairs.inspectionAssessment.reason, /CoStar records 2 above-grade stories/);
+  assert.match(upstairs.inspectionAssessment.nextStep, /Keep people clear/);
+  assert.equal(upstairs.building?.inspectionSteps, undefined);
 });

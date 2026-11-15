@@ -18,6 +18,7 @@ const propertySchema = z.object({
     catch { return false; }
   }, 'Use an IANA time zone'),
   matterportModel: z.string().regex(/^[a-zA-Z0-9]+$/).optional(),
+  matterportPublicView: z.boolean().optional(),
   costar: z.object({
     storiesAboveGrade: z.number().int().positive(),
     buildingType: z.string().min(1).optional(),

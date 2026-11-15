@@ -147,12 +147,15 @@ test('multi-agent workflow over a real database', { timeout: 60_000 }, async (t)
     });
 
     await t.test('evidence agent picks up the intake hand-off and alerts the manager', async () => {
-      const { agents } = scriptedAgents({
-        evidence: [[['get_order', {}]], [['zone_history', { days: 90 }]], [['post_brief', {
+      const { agents, requests } = scriptedAgents({
+        evidence: [[['get_order', {}]], [['zone_history', { days: 90 }]], [['inspection_plan', {}]], [['post_brief', {
           brief: 'Emergency leak with sparks reported at the conference window.', notifyManager: true, managerNote: 'Safety hazard: sparks reported with the leak.',
         }]]],
       });
       await runAgentTasks(db, cfg, agents);
+      const assessment = lastOutputs(requests.at(-1)!.request).at(-1)!;
+      assert.match(assessment, /"decision":"indoor-check"/);
+      assert.match(assessment, /"nextStep":"Keep people clear/);
       assert.ok((await events(orderId)).some((event) => event.action === 'agent_brief'));
       assert.equal(await outbox('manager'), `L-${orderId} · Safety hazard: sparks reported with the leak.`);
       assert.equal((await db.query('SELECT status FROM agent_tasks WHERE order_id=$1', [orderId])).rows[0].status, 'done');

@@ -5,7 +5,7 @@ import type { Config } from './config.js';
 import { confirmedDamageAnchor } from './damage-point.js';
 import { guidance, repairEffects, type Aid, type Issue } from './repair.js';
 import { repairScenario } from './repair-scenario.js';
-import { planRoofInspection } from './inspection.js';
+import { assessRepairInspection } from './inspection.js';
 
 const historySample = z.object({ time: z.string(), feelsLikeF: z.number() });
 const reportArea = z.object({
@@ -47,17 +47,19 @@ LEFT JOIN LATERAL (
 export function reportSnapshot(property: Config['property'], row: ReportRow) {
   const point = property.landmarks.find((landmark) => landmark.id === row.landmarkId);
   const scenario = repairScenario(row.issue, row.aid, row.description, row.property_match ? point?.label : undefined);
-  let inspection;
+  let confirmedAnchor;
   if (point && row.property_match && scenario === 'ceiling-leak') {
-    let anchor = confirmedDamageAnchor(row.damagePoint, property.matterportModel);
+    confirmedAnchor = confirmedDamageAnchor(row.damagePoint, property.matterportModel);
     for (const observation of row.linkedDamagePoints ?? []) {
-      if (anchor) break;
+      if (confirmedAnchor) break;
       if (repairScenario(row.issue, row.aid, observation.description, point.label) === scenario) {
-        anchor = confirmedDamageAnchor(observation.point, property.matterportModel);
+        confirmedAnchor = confirmedDamageAnchor(observation.point, property.matterportModel);
       }
     }
-    inspection = planRoofInspection(property, point, row.aid, anchor);
   }
+  const { assessment: inspectionAssessment, plan } = assessRepairInspection(property, {
+    propertyMatch: row.property_match, scenario, room: point, aid: row.aid, confirmedAnchor,
+  });
   const area = reportArea.safeParse(row.area).data;
   if (area?.latitude !== undefined) area.latitude = Number(area.latitude.toFixed(3));
   if (area?.longitude !== undefined) area.longitude = Number(area.longitude.toFixed(3));
@@ -66,22 +68,23 @@ export function reportSnapshot(property: Config['property'], row: ReportRow) {
     roomLabel: point?.label,
     roomEvidence: point?.roomEvidence,
     hasMatterport: !!property.matterportModel,
+    publicMatterportModel: property.matterportPublicView === true ? property.matterportModel : undefined,
     hasVexcel: !!(property.roof.imageUrl || property.roof.imageFile),
     analysisDate: property.roof.analysisDate,
     captureDate: property.roof.captureDate,
     roofEvidence: property.roof.attributes.slice(0, 6).map(({ label, value }) => `${label} · ${value}`),
-    inspectionSteps: inspection?.steps,
+    inspectionSteps: plan?.steps,
   } : undefined;
   return {
     id: row.id, status: row.status, issue: row.issue, aid: row.aid, scenario, guidance: guidance[row.aid],
-    effects: repairEffects(row.issue, row.aid), area, building, renderStatus: row.renderStatus,
+    effects: repairEffects(row.issue, row.aid), area, building, inspectionAssessment, renderStatus: row.renderStatus,
   };
 }
 
 export function startReportPublisher(db: Pool, config: Config) {
   if (!config.reportPublish) return;
   const { origin, token } = config.reportPublish;
-  const evidenceVersion = createHash('sha256').update('report-v5:').update(JSON.stringify(config.property)).digest('hex');
+  const evidenceVersion = createHash('sha256').update('report-v6:').update(JSON.stringify(config.property)).digest('hex');
   let active: Promise<void> | undefined;
 
   async function publish() {
