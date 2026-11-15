@@ -605,7 +605,7 @@ export function SharedReport({ access }: { access: string }) {
   return <><Header /><main className="page">{data ? <>
     <section className="heading"><div><p className="eyebrow">Work order L-{data.id}</p><h1>{data.issue === 'leak' ? 'Water leak' : 'Building damage'}</h1></div><Badge status={data.status} /></section>
     <section className="panel evidence"><div className="panel-head"><div><h2>Temporary protection</h2><p>{data.guidance}</p></div></div>
-      {data.renderStatus === 'ready' ? <div className="roof-image"><img src={`${url}/render`} alt="3D guide showing temporary protection and what maintenance should repair" /></div>
+      {data.renderStatus === 'ready' ? <figure className="roof-image"><img src={`${url}/render`} alt="3D guide showing temporary protection and what maintenance should repair" /><figcaption className="caption">Blender rendered</figcaption></figure>
         : data.renderStatus === 'queued' && <p className="caption">Generating the 3D diagram…</p>}</section>
     <Neighborhood area={data.area} />
     <section className="panel evidence">

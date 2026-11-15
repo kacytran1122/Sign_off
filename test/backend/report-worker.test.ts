@@ -106,6 +106,7 @@ test('the report presents building and neighborhood evidence and serves the Blen
   }
   assert.match(html, /<iframe title="Neighborhood satellite map"[^>]+referrerpolicy="no-referrer"[^>]+src="https:\/\/www\.arcgis\.com\/apps\/Embed\/index\.html\?webmap=86265e5a4bbb4187a59719cf134e0018&amp;center=-117\.765%2C34\.123&amp;level=18/);
   assert.doesNotMatch(html, /OpenStreetMap|explain the precaution|separate records/);
+  assert.match(html, /<figcaption><strong>3D reference model<\/strong>.*Blender rendered<\/p><\/figcaption>/);
   assert.match(html, /aria-labelledby="observed-title observed-description"/);
   assert.match(html, /aria-labelledby="forecast-title forecast-description"/);
   // The duplicate or missing measurement must never be replaced by an invented value or line.

@@ -451,7 +451,7 @@ function reportHtml(report, uuid) {
         </section>
         <figure class="card model-card">
           ${report.renderStatus === 'ready' ? `<img src="/api/reports/${uuid}/render" alt="3D model: ${model}">` : `<p class="model-pending muted">${report.renderStatus === 'queued' ? 'The 3D model is being prepared. Refresh this page for an update.' : 'A 3D model is unavailable.'}</p>`}
-          <figcaption><strong>3D reference model</strong><p>${model}.</p></figcaption>
+          <figcaption><strong>3D reference model</strong>${report.renderStatus === 'ready' ? `<p>${model}.</p><p class="muted">Blender rendered</p>` : ''}</figcaption>
         </figure>
       </div>
       ${buildingContent(report.building, report)}${neighborhood(report.area)}

@@ -36,6 +36,7 @@ test('a tenant report moves from generating to a visible guide without a reload'
   await expect(guide).toHaveCount(0);
   ready = true;
   await expect(guide).toBeVisible();
+  await expect(page.getByText('Blender rendered', { exact: true })).toBeVisible();
   await expect.poll(() => guide.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1);
   await expect(page.getByText('Generating the 3D diagram…')).toHaveCount(0);
 });
