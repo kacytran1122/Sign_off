@@ -16,7 +16,7 @@ const anchor = { x: 2, y: 3, z: 4 };
 const damagePoint = { anchor, stem: { x: 0, y: -.22, z: 0 }, sweep: 'review-uuid', confirmed: true };
 const sdkEvents = (page: Page) => page.evaluate(() => (window as Window & { sdkEvents?: unknown[][] }).sdkEvents ?? []);
 
-async function stubMatterport(page: Page) {
+async function stubMatterport(page: Page, waitForViewer = false) {
   const manifest: Record<string, { file: string }> = JSON.parse(await readFile('dist/.vite/manifest.json', 'utf8'));
   const sdk = Object.entries(manifest).find(([name]) => name.includes('/@matterport/sdk/'))?.[1];
   if (!sdk) throw new Error('Run npm run build before testing the inspection model.');
@@ -30,6 +30,15 @@ async function stubMatterport(page: Page) {
       let tags = 0;
       export async function setupSdk() {
         return {
+          App: {
+            Phase: { PLAYING: 'playing' },
+            state: { waitUntil: async (predicate) => {
+              record('app-waiting');
+              if (${waitForViewer}) await new Promise((resolve) => window.addEventListener('fixture-player-ready', resolve, { once: true }));
+              if (predicate({ phase: 'loading' }) || !predicate({ phase: 'playing' })) throw new Error('Invalid readiness condition');
+              return { phase: 'playing' };
+            } },
+          },
           Camera: {
             pose: { subscribe: (callback) => {
               callback({ position: { x: 2, y: 2, z: 4 }, sweep: 'review-uuid' });
@@ -86,12 +95,17 @@ async function stubWorkOrder(page: Page, alreadyConfirmed = false) {
 }
 
 test('the manager reviews the tenant photo and confirms only a model surface', async ({ page }) => {
-  await stubMatterport(page);
+  await stubMatterport(page, true);
   const requests = await stubWorkOrder(page);
   await page.goto(`${workOrder}#inspect=${editKey}`);
   await expect(page.getByText('Room location. Damage spot awaiting photo review.')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Suggested inspection area' })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Match photo to model' }).click();
+  const matchPhoto = page.getByRole('button', { name: 'Match photo to model' });
+  await expect(matchPhoto).toBeDisabled();
+  await expect.poll(() => sdkEvents(page)).toContainEqual(['app-waiting']);
+  expect((await sdkEvents(page)).some(([kind]) => kind === 'tags')).toBe(false);
+  await page.evaluate(() => window.dispatchEvent(new Event('fixture-player-ready')));
+  await matchPhoto.click();
   await expect(page.getByRole('img', { name: 'Tenant photo for matching the damage spot' })).toHaveAttribute('src', photoUrl);
 
   const picker = page.getByRole('button', { name: 'Select a surface on the Matterport model' });

@@ -8,6 +8,10 @@ declare module '@matterport/sdk' {
     color?: { r: number; g: number; b: number };
   };
   export interface Showcase {
+    App: {
+      Phase: { PLAYING: string };
+      state: { waitUntil(condition: (state: { phase: string }) => boolean): Promise<{ phase: string }> };
+    };
     Camera: {
       lookAt(position: Vector): Promise<void>;
       pose: { subscribe(callback: (pose: { position: Vector; sweep: string }) => void): { cancel(): void } };

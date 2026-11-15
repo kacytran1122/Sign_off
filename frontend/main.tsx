@@ -143,11 +143,21 @@ function Interior({ ticket, active, report, access, inspectToken, onConfirm }: {
     if (!model || !matterportKey || !frame.current) return;
     const iframe = frame.current;
     let live = true;
-    void import('@matterport/sdk').then(({ setupSdk }) =>
-      setupSdk(matterportKey, { iframe }),
-    ).then((client) => { if (live) setSdk(client); })
-      .catch(() => { if (live) setMessage('The interactive viewer could not connect. Check the model and allowed domain.'); });
-    return () => { live = false; };
+    setSdk(undefined);
+    added.current.clear();
+    const loadingNotice = setTimeout(() => {
+      if (live) setMessage('The Matterport viewer is still loading.');
+    }, 15_000);
+    void import('@matterport/sdk').then(async ({ setupSdk }) => {
+      const client = await setupSdk(matterportKey, { iframe });
+      await client.App.state.waitUntil(({ phase }) => phase === client.App.Phase.PLAYING);
+      if (!live) return;
+      setMessage('');
+      setSdk(client);
+    }).catch(() => {
+      if (live) setMessage('The interactive viewer could not connect. Check the model and allowed domain.');
+    }).finally(() => clearTimeout(loadingNotice));
+    return () => { live = false; clearTimeout(loadingNotice); };
   }, [model, matterportKey]);
   useEffect(() => {
     if (!sdk || !canReview) return;
