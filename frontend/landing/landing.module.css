@@ -89,6 +89,11 @@
 .workspaceShowcase { padding-block: clamp(3.45rem, 7.2vw, 6.05rem); }
 .workspaceShowcase h2 { margin-bottom: clamp(1.15rem, 3vw, 2rem); }
 
+.exampleNavigation { display: flex; min-height: 4.35rem; align-items: center; justify-content: space-between; gap: .8rem; }
+.exampleHero { padding-block: clamp(2.35rem, 6vw, 4.75rem); background: radial-gradient(ellipse at 85% 10%, #f4e3e9, transparent 65%), #faf3e9; }
+.exampleHero p { max-width: 37rem; margin-top: .9rem; color: var(--quiet); }
+.exampleShowcase { padding-block: clamp(1.5rem, 4.6vw, 3.35rem) clamp(2.5rem, 6vw, 4.5rem); }
+
 .proof { border-block: 1px solid #eee2df; background: radial-gradient(ellipse at 85% 10%, #f4e3e9, transparent 65%), #faf3e9; }
 .proofGrid { display: grid; grid-template-columns: minmax(0, .84fr) minmax(0, 1.16fr); gap: clamp(1.65rem, 7vw, 5rem); align-items: center; padding-block: clamp(3.5rem, 7vw, 5.7rem); }
 .proofCopy h2 { max-width: 15ch; text-wrap: balance; }

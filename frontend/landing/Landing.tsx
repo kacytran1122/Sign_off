@@ -19,14 +19,14 @@ function BrandLink() {
 }
 
 export default function Landing({ previewOnly = false }: { previewOnly?: boolean }) {
-  const destination = previewOnly ? '#example' : '/app';
+  const destination = previewOnly ? '/repair-example' : '/app';
   const appLabel = previewOnly ? 'Explore the repair' : 'Open Signoff';
   return <div className={styles.landing}>
     <a className={styles.skipLink} href="#content">Skip to content</a>
     <header className={styles.header}>
       <nav className={`${styles.wrap} ${styles.navigation}`} aria-label="Main navigation">
         <BrandLink />
-        <div className={styles.navLinks}><a href="#how">How it works</a><a href="#verification">Tenant signoff</a></div>
+        <div className={styles.navLinks}><a href="#verification">Tenant signoff</a></div>
         <a className={styles.primary} href={destination}>{previewOnly ? 'See the repair' : 'Get started'} <Arrow /></a>
       </nav>
     </header>
@@ -36,8 +36,7 @@ export default function Landing({ previewOnly = false }: { previewOnly?: boolean
           <div className={styles.heroCopy}>
             <h1 id="headline">The repair isn’t done until <em>the tenant says so.</em></h1>
             <div className={styles.actions}>
-              <a className={styles.primary} href={destination}>{appLabel} <Arrow /></a>
-              <a className={styles.secondary} href="#how">See how it works <Arrow down /></a>
+              <Link className={styles.primary} href="/repair-example">Explore the repair <Arrow /></Link>
             </div>
           </div>
           <div className={styles.heroPhone}><PhonePreview /></div>

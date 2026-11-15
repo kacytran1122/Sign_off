@@ -7,31 +7,9 @@ test('the landing page introduces Signoff and leads to the repair workspace', as
     level: 1, name: 'The repair isn’t done until the tenant says so.',
   })).toBeVisible();
 
-  await page.getByRole('link', { name: 'See how it works', exact: true }).click();
-  await expect(page).toHaveURL(/#how$/);
+  await expect(page.getByRole('link', { name: /how it works/i })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Explore the repair' })).toHaveAttribute('href', '/repair-example');
   await expect(page.getByRole('heading', { name: 'From photo to signoff.' })).toBeVisible();
-
-  const showcase = page.getByRole('region', { name: 'From photo to signoff.' });
-  const report = showcase.getByRole('tab', { name: 'Tenant report' });
-  await report.click();
-  await expect(report).toHaveAttribute('aria-selected', 'true');
-  const photo = showcase.getByRole('tabpanel', { name: 'Tenant report' }).getByRole('img');
-  await expect.poll(() => photo.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
-  const review = showcase.getByRole('tab', { name: 'Manager review' });
-  await review.click();
-  const order = showcase.getByRole('tabpanel', { name: 'Manager review' });
-  const reviewCapture = order.getByRole('img', { name: /Signoff repair report/ });
-  await expect.poll(() => reviewCapture.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
-  const fullCapture = order.getByRole('link', { name: 'Enlarge report capture' });
-  const captureHref = await fullCapture.getAttribute('href');
-  expect(captureHref).toBeTruthy();
-  expect((await page.request.get(captureHref!)).ok()).toBe(true);
-  await review.press('ArrowRight');
-  const verification = showcase.getByRole('tab', { name: 'Tenant confirmation' });
-  await expect(verification).toHaveAttribute('aria-selected', 'true');
-  await expect(verification).toBeFocused();
-  const timeline = showcase.getByRole('tabpanel', { name: 'Tenant confirmation' }).getByRole('img');
-  await expect.poll(() => timeline.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
 
   await page.getByRole('banner').getByRole('link', { name: 'Tenant signoff', exact: true }).click();
   await expect(page).toHaveURL(/#verification$/);
@@ -59,16 +37,41 @@ test('the landing page introduces Signoff and leads to the repair workspace', as
   await expect(page.getByRole('button', { name: 'Tenant', exact: true })).toBeVisible();
 });
 
-test('the landing page opens the repair workspace without horizontal overflow on mobile', async ({ page }) => {
+test('the landing page and standalone repair example work on mobile', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 844 });
   await page.goto('/');
-  const demo = page.getByRole('link', { name: 'Open Signoff', exact: true }).first();
-  await expect(demo).toBeInViewport();
+  const example = page.getByRole('link', { name: 'Explore the repair', exact: true });
+  await expect(example).toBeInViewport();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
-  await expect(demo).toHaveAttribute('href', '/app');
-  await demo.click();
-  await expect(page).toHaveURL(/\/app$/);
-  await expect(page.getByRole('heading', { name: 'From report to repair.' })).toBeVisible();
+  await example.click();
+  await expect(page).toHaveURL(/\/repair-example$/);
+  await expect(page.getByRole('heading', { level: 1, name: 'From photo to signoff.' })).toBeVisible();
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', 'https://signoffon.us/repair-example');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+
+  const showcase = page.getByRole('main');
+  const report = showcase.getByRole('tab', { name: 'Tenant report' });
+  await expect(report).toHaveAttribute('aria-selected', 'true');
+  const photo = showcase.getByRole('tabpanel', { name: 'Tenant report' }).getByRole('img');
+  await expect.poll(() => photo.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
+  const review = showcase.getByRole('tab', { name: 'Manager review' });
+  await review.click();
+  const order = showcase.getByRole('tabpanel', { name: 'Manager review' });
+  const reviewCapture = order.getByRole('img', { name: /Signoff repair report/ });
+  await expect.poll(() => reviewCapture.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
+  const fullCapture = order.getByRole('link', { name: 'Enlarge report capture' });
+  const captureHref = await fullCapture.getAttribute('href');
+  expect(captureHref).toBeTruthy();
+  expect((await page.request.get(captureHref!)).ok()).toBe(true);
+  await review.press('ArrowRight');
+  const verification = showcase.getByRole('tab', { name: 'Tenant confirmation' });
+  await expect(verification).toHaveAttribute('aria-selected', 'true');
+  await expect(verification).toBeFocused();
+  const timeline = showcase.getByRole('tabpanel', { name: 'Tenant confirmation' }).getByRole('img');
+  await expect.poll(() => timeline.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
+  await expect(page.getByRole('link', { name: 'Get started' })).toHaveCount(0);
+  await page.getByRole('link', { name: 'Back to Signoff' }).click();
+  await expect(page).toHaveURL(/\/$/);
 });
 
 test('the phone previews a Signoff mention and repeats the conversation automatically', async ({ page }) => {
