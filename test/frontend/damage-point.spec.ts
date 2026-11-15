@@ -15,7 +15,7 @@ const anchor = { x: 2, y: 3, z: 4 };
 const damagePoint = { anchor, stem: { x: 0, y: -.22, z: 0 }, sweep: 'review-uuid', confirmed: true };
 const sdkEvents = (page: Page) => page.evaluate(() => (window as Window & { sdkEvents?: unknown[][] }).sdkEvents ?? []);
 
-async function stubMatterport(page: Page, waitForViewer = false) {
+async function stubMatterport(page: Page, waitForViewer = false, hasExteriorSplat = false) {
   // Exercise the shipped SDK bootstrap through the same iframe boundary as a real model.
   await page.route('https://my.matterport.com/show/**', (route) => route.fulfill({
     contentType: 'text/html',
@@ -43,9 +43,21 @@ async function stubMatterport(page: Page, waitForViewer = false) {
       let tags = 0;
       export class SdkBuilder {
         build() {
+          let onMode;
+          let onFeatures;
+          const updateView = (mode) => {
+            onMode?.(mode);
+            onFeatures?.({ 'feature.splatpresent': mode === 'mode.dollhouse' && ${hasExteriorSplat} });
+          };
           return {
             App: {
               Phase: { PLAYING: 'playing' },
+              Feature: { SplatPresent: 'feature.splatpresent' },
+              features: { subscribe: ({onChanged}) => {
+                onFeatures = onChanged;
+                onChanged({ 'feature.splatpresent': false });
+                return { cancel() { onFeatures = undefined; } };
+              }},
               state: { waitUntil: async (predicate) => {
                 record('app-waiting');
                 if (${waitForViewer}) await new Promise((resolve) => window.addEventListener('fixture-player-ready', resolve, { once: true }));
@@ -61,7 +73,16 @@ async function stubMatterport(page: Page, waitForViewer = false) {
               lookAt: async (point) => record('lookAt', point),
             },
             Model: { getData: async () => ({ sweeps: [{ sid: 'review-sid', uuid: 'review-uuid' }] }) },
-            Sweep: { moveTo: async (id) => record('sweep', id) },
+            Mode: {
+              Mode: { INSIDE: 'mode.inside', DOLLHOUSE: 'mode.dollhouse' },
+              current: { subscribe: (listener) => {
+                onMode = listener;
+                listener('mode.inside');
+                return { cancel() { onMode = undefined; } };
+              }},
+              moveTo: async (mode) => { record('mode', mode); updateView(mode); return mode; },
+            },
+            Sweep: { moveTo: async (id) => { record('sweep', id); updateView('mode.inside'); } },
             Renderer: { getWorldPositionData: async (screen) => {
               record('ray', screen);
               if (++rays === 1) return { position: null, floor: -1 };
@@ -167,4 +188,20 @@ test('the confirmed spot survives reload without allowing edits from the work or
     ['sweep', 'review-sid'],
     ['lookAt', anchor],
   ]));
+});
+
+test('the 3D overview reflects Matterport splat availability and keeps photo review in the room', async ({ page }) => {
+  await stubMatterport(page, false, true);
+  await stubWorkOrder(page, true);
+  await page.goto(`${workOrder}#inspect=${editKey}`);
+
+  await expect(page.getByText('Interactive Matterport scan', { exact: true })).toBeVisible();
+  await expect(page.getByText('Gaussian splat available in this view')).toHaveCount(0);
+  await page.getByRole('button', { name: '3D overview' }).click();
+  await expect.poll(() => sdkEvents(page)).toContainEqual(['mode', 'mode.dollhouse']);
+  await expect(page.getByText('Gaussian splat available in this view')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Adjust damage spot' })).toBeDisabled();
+  await page.getByRole('button', { name: 'View confirmed spot' }).click();
+  await expect(page.getByText('Interactive Matterport scan', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Adjust damage spot' })).toBeEnabled();
 });

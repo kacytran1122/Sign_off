@@ -169,6 +169,41 @@ test('the report uses the repair scenario and reserves the roof inspection path 
   assert.doesNotMatch(blocked, /Cabinet cutaway/);
 });
 
+test('only an approved model opens a Matterport frame and the inspection decision is escaped', async () => {
+  const { request, publish } = await workerFixture();
+  const assessment = {
+    decision: 'alignment-check',
+    reason: 'The location falls outside the mapped <roof zone>.',
+    nextStep: 'Verify the alignment on site.',
+    privateNote: 'should never be exposed',
+  };
+  assert.equal((await publish({
+    ...example,
+    inspectionAssessment: assessment,
+    building: { hasMatterport: true, publicMatterportModel: 'AuthorizedModel', matterportKey: 'do not expose' },
+  })).status, 204);
+  const page = await request(`/reports/${id}`);
+  assert.match(page.headers.get('Content-Security-Policy') ?? '', /frame-src https:\/\/www\.arcgis\.com https:\/\/my\.matterport\.com;/);
+  const html = await page.text();
+  assert.match(html, /Explore the property in 3D/);
+  assert.match(html, /https:\/\/my\.matterport\.com\/show\/\?m=AuthorizedModel&amp;play=1/);
+  assert.match(html, /title="Matterport 3D property scan"[^>]+referrerpolicy="no-referrer"/);
+  assert.match(html, /Verify the room-to-roof alignment/);
+  assert.match(html, /&lt;roof zone&gt;/);
+  const metadata = await (await request(`/api/reports/${id}`)).json();
+  assert.doesNotMatch(JSON.stringify(metadata), /should never be exposed|do not expose/);
+
+  for (const building of [
+    { hasMatterport: false, publicMatterportModel: 'UnapprovedModel' },
+    { hasMatterport: true, publicMatterportModel: 'https://attacker.invalid' },
+  ]) {
+    assert.equal((await publish({ ...example, building })).status, 204);
+    const rejected = await request(`/reports/${id}`);
+    assert.doesNotMatch(rejected.headers.get('Content-Security-Policy') ?? '', /matterport\.com/);
+    assert.doesNotMatch(await rejected.text(), /Matterport 3D property scan|attacker\.invalid|UnapprovedModel/);
+  }
+});
+
 test('the publisher rejects oversized bodies before storing them, including lengthless streams', async () => {
   const { publish, objects } = await workerFixture();
   const headers = { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' };

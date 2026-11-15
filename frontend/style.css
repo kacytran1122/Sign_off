@@ -124,6 +124,12 @@
 
   .evidence-grid > :only-child { grid-column: 1 / -1; }
   .model-surface { position: relative; min-width: 0; }
+  .model-controls { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .5rem; padding: .55rem 19px; border-top: 1px solid var(--line); }
+  .model-controls > div { display: flex; flex-wrap: wrap; gap: .4rem; }
+  .model-mode { margin: 0; color: var(--muted); font-size: 13px; }
+  .property-view { padding: 0 19px 16px; }
+  .property-view summary { cursor: pointer; margin: .5rem 0; font-weight: 650; }
+  .property-view .showcase { margin-bottom: .5rem; border-radius: .65rem; }
   .surface-picker { position: absolute; inset: 0; width: 100%; border: 0; background: transparent; cursor: crosshair; border-radius: 0; }
   .surface-picker:focus-visible { outline-offset: -3px; outline-color: #fffef9; }
   .surface-picker:focus-visible::after { content: '+'; color: white; text-shadow: 0 0 4px black; font-size: 1.5rem; }

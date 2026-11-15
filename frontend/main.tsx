@@ -40,7 +40,13 @@ type BuildingEvidence = {
   storiesAboveGrade: number; buildingType?: string; propertySubtype?: string; buildingAreaSqFt?: number; yearBuilt?: number;
   roomLabel?: string; roomEvidence?: { areaSqFt?: number; widthFt?: number; depthFt?: number; heightFt?: number };
   matchedRooms?: number; matchedViewpoints?: number; hasMatterport?: boolean; hasVexcel?: boolean;
+  publicMatterportModel?: string;
   captureDate?: string; analysisDate?: string;
+};
+type InspectionAssessment = {
+  decision: 'indoor-check' | 'roof-zone' | 'projected-roof-check' | 'alignment-check';
+  reason: string;
+  nextStep: string;
 };
 type Area = {
   latitude?: number; longitude?: number; city?: string; error?: string; timeZone?: string; store?: string;
@@ -141,7 +147,9 @@ function Interior({ ticket, active, report, access, inspectToken, onConfirm }: {
   const added = useRef(new Set<string>());
   const [sdk, setSdk] = useState<Showcase>();
   const [message, setMessage] = useState('');
-  const [walking, setWalking] = useState(false);
+  const [movement, setMovement] = useState<'room' | 'overview'>();
+  const [hasSplats, setHasSplats] = useState<boolean>();
+  const [viewMode, setViewMode] = useState<string | null>();
   const [review, setReview] = useState<PinReview>();
   const camera = useRef<{ position: Vector; sweep: string } | undefined>(undefined);
   const { matterportKey } = ticket;
@@ -178,6 +186,20 @@ function Interior({ ticket, active, report, access, inspectToken, onConfirm }: {
     return () => { live = false; clearTimeout(loadingNotice); };
   }, [model, matterportKey]);
   useEffect(() => {
+    setHasSplats(undefined);
+    setViewMode(undefined);
+    if (!sdk) return;
+    const splatFeature = sdk.App.Feature?.SplatPresent;
+    const features = splatFeature && sdk.App.features?.subscribe({
+      onChanged: (features) => setHasSplats(features[splatFeature]),
+    });
+    const mode = sdk.Mode?.current.subscribe(setViewMode);
+    return () => {
+      if (features) features.cancel();
+      mode?.cancel();
+    };
+  }, [sdk]);
+  useEffect(() => {
     if (!sdk || !canReview) return;
     const pose = sdk.Camera.pose.subscribe((value) => { camera.current = value; });
     return () => { pose.cancel(); camera.current = undefined; };
@@ -198,8 +220,8 @@ function Interior({ ticket, active, report, access, inspectToken, onConfirm }: {
     }))).catch(() => setMessage('The model loaded, but the inspection markers could not be drawn.'));
   }, [sdk, locationIds, ticket.property.landmarks]);
   async function walk() {
-    if (!sdk || walking) return;
-    setWalking(true);
+    if (!sdk || movement) return;
+    setMovement('room');
     setMessage('');
     try {
       const sweeps = ticket.sponsorRehearsal || confirmed?.sweep ? (await sdk.Model.getData()).sweeps : [];
@@ -216,7 +238,16 @@ function Interior({ ticket, active, report, access, inspectToken, onConfirm }: {
       const target = confirmed?.anchor ?? (ticket.sponsorRehearsal ? active.anchor : undefined);
       if (target && sdk.Camera.lookAt) await sdk.Camera.lookAt(target);
     } catch { setMessage('This walkthrough could not reach its saved viewpoint.'); }
-    finally { setWalking(false); }
+    finally { setMovement(undefined); }
+  }
+  async function showOverview() {
+    const mode = sdk?.Mode;
+    if (!mode || movement) return;
+    setMovement('overview');
+    setMessage('');
+    try { await mode.moveTo(mode.Mode.DOLLHOUSE); }
+    catch { setMessage('The 3D overview could not open.'); }
+    finally { setMovement(undefined); }
   }
   async function selectSurface(event: MouseEvent<HTMLButtonElement>) {
     if (!sdk || !frame.current || currentReview?.stage !== 'armed') return;
@@ -276,12 +307,22 @@ function Interior({ ticket, active, report, access, inspectToken, onConfirm }: {
   const notice = message || previewError || confirmedError;
   const comparison = canReview && !!currentReview;
   const picking = currentReview?.stage === 'armed' || currentReview?.stage === 'locating';
+  const outsideRoom = viewMode != null && viewMode !== sdk?.Mode?.Mode.INSIDE;
   return <section className="panel evidence">
     <div className="panel-head"><div><h2>Reported location</h2><p>{ticket.sponsorRehearsal ? active.suite : `Suite ${active.suite}`} · {active.label}</p>
       {model && report.has_photo && <p>{confirmed ? 'Damage spot confirmed against the tenant photo.' : 'Room location. Damage spot awaiting photo review.'}</p>}</div>
-      {model && <button className="small" disabled={!sdk || walking || !!currentReview} onClick={walk}>
-        {walking ? 'Moving…' : confirmed ? 'View confirmed spot' : 'Walk to report'}
-      </button>}</div>
+    </div>
+    {showcaseUrl && <div className="model-controls">
+      <p className="model-mode" aria-live="polite">{hasSplats ? 'Gaussian splat available in this view' : 'Interactive Matterport scan'}</p>
+      <div>
+        {sdk?.Mode && <button className="small" disabled={!!movement || !!currentReview || viewMode === sdk.Mode.Mode.DOLLHOUSE} onClick={showOverview}>
+          {movement === 'overview' ? 'Opening…' : '3D overview'}
+        </button>}
+        <button className="small" disabled={!sdk || !!movement || !!currentReview} onClick={walk}>
+          {movement === 'room' ? 'Moving…' : confirmed ? 'View confirmed spot' : 'Walk to report'}
+        </button>
+      </div>
+    </div>}
     {model ? <div className={comparison ? 'model-comparison' : undefined}>
       <div className="model-surface"><iframe className="showcase" title="Matterport inspection model" src={showcaseUrl}
         allow="fullscreen; xr-spatial-tracking; autoplay" referrerPolicy="origin" ref={frame} />
@@ -308,10 +349,11 @@ function Interior({ ticket, active, report, access, inspectToken, onConfirm }: {
           disabled={currentReview.stage === 'saving'}>Pick again</button>}
         <button onClick={() => { setReview(undefined); setMessage(''); }}
           disabled={currentReview.stage === 'locating' || currentReview.stage === 'saving'}>Cancel</button>
-      </> : <button className="small" disabled={!sdk || walking} onClick={() => {
+      </> : <button className="small" disabled={!sdk || !!movement || outsideRoom} onClick={() => {
         setReview({ reportId: report.id, stage: 'armed' });
         setMessage('');
       }}>{confirmed ? 'Adjust damage spot' : 'Match photo to model'}</button>}
+      {!currentReview && outsideRoom && <p>Walk to the reported room to match the tenant photo.</p>}
     </div>}
     {notice && <p className="notice" role="status">{notice}</p>}
   </section>;
@@ -600,14 +642,21 @@ export function DemoPage() {
 export function SharedReport({ access }: { access: string }) {
   const url = `/api/reports/${encodeURIComponent(access)}`;
   const { data, error } = usePoll<{ id: string; status: Status; issue: string; guidance: string; effects: string;
-    area?: Area; building?: BuildingEvidence; renderStatus?: string }>(url);
+    area?: Area; building?: BuildingEvidence; inspectionAssessment?: InspectionAssessment; renderStatus?: string }>(url);
   const building = data?.building;
+  const model = building?.publicMatterportModel;
+  const propertyView = model && /^[A-Za-z0-9]{1,64}$/.test(model)
+    ? `https://my.matterport.com/show/?m=${model}&play=1` : undefined;
   return <><Header /><main className="page">{data ? <>
     <section className="heading"><div><p className="eyebrow">Work order L-{data.id}</p><h1>{data.issue === 'leak' ? 'Water leak' : 'Building damage'}</h1></div><Badge status={data.status} /></section>
     <section className="panel evidence"><div className="panel-head"><div><h2>Temporary protection</h2><p>{data.guidance}</p></div></div>
       {data.renderStatus === 'ready' ? <figure className="roof-image"><img src={`${url}/render`} alt="3D guide showing temporary protection and what maintenance should repair" /><figcaption className="caption">Blender rendered</figcaption></figure>
         : data.renderStatus === 'queued' && <p className="caption">Generating the 3D diagram…</p>}</section>
-    <Neighborhood area={data.area} />
+    {data.inspectionAssessment && <section className="panel evidence inspection-plan">
+      <div className="panel-head"><h2>Inspection recommendation</h2></div>
+      <p className="caption">{data.inspectionAssessment.reason}</p>
+      <p className="caption">{data.inspectionAssessment.nextStep}</p>
+    </section>}
     <section className="panel evidence">
       <div className="panel-head"><h2>CoStar Group building evidence</h2></div>
       {building ? <dl className="attributes">
@@ -618,7 +667,13 @@ export function SharedReport({ access }: { access: string }) {
         {building.hasMatterport && <div><dt>Matterport</dt><dd>{building.roomLabel ?? 'Verified building model'}{building.roomEvidence?.areaSqFt && ` · ${building.roomEvidence.areaSqFt.toLocaleString('en-US')} sq ft measured`}</dd></div>}
         {building.hasVexcel && <div><dt>Vexcel</dt><dd>{building.captureDate ? `Roof image captured ${building.captureDate}` : 'Roof evidence available to maintenance'}</dd></div>}
       </dl> : <p className="caption">CoStar building evidence is unavailable for this address.</p>}
+      {propertyView && <details className="property-view">
+        <summary>Explore the property in 3D</summary>
+        <iframe className="showcase" src={propertyView} title="Matterport 3D property scan" loading="lazy" referrerPolicy="no-referrer" allow="fullscreen" />
+        <a href={propertyView} target="_blank" rel="noreferrer">Open in Matterport</a>
+      </details>}
     </section>
+    <Neighborhood area={data.area} />
     <p className="inspection"><strong>Possible effects</strong> {data.effects}</p>
   </> : <p role="status">{error || 'Loading the repair report…'}</p>}</main></>;
 }

@@ -4,6 +4,12 @@ const reportPath = new RegExp(`^/(reports|api/reports)/(${UUID})(/render)?/?$`, 
 const MAX_PNG_BYTES = 4 * 1024 * 1024;
 const MAX_BODY_BYTES = 4 * Math.ceil(MAX_PNG_BYTES / 3) + 32 * 1024;
 const states = { open: 'Open', scheduled: 'Scheduled', awaiting_confirmation: 'Awaiting tenant confirmation', closed: 'Closed' };
+const inspectionDecisions = {
+  'indoor-check': 'Inspect the reported area first',
+  'roof-zone': 'Start indoors, then check the roof zone',
+  'projected-roof-check': 'Start indoors, then check the mapped roof spot',
+  'alignment-check': 'Verify the room-to-roof alignment',
+};
 const precautions = {
   bucket: {
     title: 'Water leak',
@@ -179,6 +185,8 @@ function cleanArea(input) {
   };
 }
 
+const publicModelId = /^[A-Za-z0-9]{1,64}$/;
+
 function cleanBuilding(input) {
   if (!record(input)) return;
   const room = input.roomEvidence;
@@ -198,6 +206,8 @@ function cleanBuilding(input) {
       heightFt: boundedNumber(room.heightFt, .01, 10_000),
     } : undefined,
     hasMatterport: input.hasMatterport === true,
+    publicMatterportModel: input.hasMatterport === true && typeof input.publicMatterportModel === 'string' &&
+      publicModelId.test(input.publicMatterportModel) ? input.publicMatterportModel : undefined,
     hasVexcel: input.hasVexcel === true,
     analysisDate: dateOnly(input.analysisDate),
     captureDate: dateOnly(input.captureDate),
@@ -219,6 +229,13 @@ function readPng(base64) {
   return width > 0 && width <= 4096 && height > 0 && height <= 4096 ? raw : undefined;
 }
 
+function cleanAssessment(input) {
+  if (!record(input) || typeof input.decision !== 'string' || !Object.hasOwn(inspectionDecisions, input.decision)) return;
+  const reason = shortText(input.reason, 350);
+  const nextStep = shortText(input.nextStep, 550);
+  if (reason && nextStep) return { decision: input.decision, reason, nextStep };
+}
+
 function snapshot(input) {
   if (!record(input) || typeof input.id !== 'string' || !/^[1-9]\d{0,18}$/.test(input.id) ||
     typeof input.status !== 'string' || !Object.hasOwn(states, input.status) || !['leak', 'damage'].includes(input.issue)) return;
@@ -231,6 +248,7 @@ function snapshot(input) {
     scenario: typeof input.scenario === 'string' && Object.hasOwn(scenarios, input.scenario) &&
       scenarios[input.scenario].issue === input.issue ? input.scenario : undefined,
     area: cleanArea(input.area), building: cleanBuilding(input.building),
+    inspectionAssessment: cleanAssessment(input.inspectionAssessment),
     renderStatus: input.renderPng ? 'ready' : input.renderStatus === 'queued' ? 'queued' : input.renderStatus === 'failed' ? 'failed' : undefined,
     renderPng: input.renderPng ?? undefined,
   };
@@ -353,6 +371,28 @@ function sourceCard(title, facts, notes) {
   </section>`;
 }
 
+function matterportView(building) {
+  const model = building?.publicMatterportModel;
+  if (!model || !publicModelId.test(model)) return '';
+  const url = `https://my.matterport.com/show/?m=${model}&amp;play=1`;
+  return `<details class="card property-view">
+    <summary>Explore the property in 3D</summary>
+    <iframe title="Matterport 3D property scan" src="${url}" loading="lazy" referrerpolicy="no-referrer" allow="fullscreen"></iframe>
+    <p class="muted"><a href="${url}" target="_blank" rel="noreferrer">Open in Matterport</a></p>
+  </details>`;
+}
+
+function inspectionDecision(assessment) {
+  const result = cleanAssessment(assessment);
+  if (!result) return '';
+  return `<section class="card assessment-card" aria-labelledby="assessment">
+    <h2 id="assessment">Inspection recommendation</h2>
+    <h3>${inspectionDecisions[result.decision]}</h3>
+    <p class="muted">${esc(result.reason)}</p>
+    <p>${esc(result.nextStep)}</p>
+  </section>`;
+}
+
 function buildingContent(building, report) {
   if (!building || !(building.storiesAboveGrade || building.hasMatterport || building.hasVexcel)) {
     return '<section class="section" aria-labelledby="building"><div class="section-title"><h2 id="building">Building evidence</h2></div><div class="card muted">Verified building evidence is unavailable for this report.</div></section>';
@@ -381,6 +421,7 @@ function buildingContent(building, report) {
         ['Roof analysis', building.analysisDate],
       ], `${building.roofEvidence?.length ? `<ul class="evidence-notes">${building.roofEvidence.map((line) => `<li>${esc(line)}</li>`).join('')}</ul>` : ''}<p class="muted attribution">Matched Vexcel aerial imagery</p>`) : ''}
     </div>
+    ${matterportView(building)}
     ${linkedOverhead && building.inspectionSteps?.length ? `<section class="card path-card"><h3>Suggested inspection path</h3><ol>${building.inspectionSteps.map((step) => `<li>${esc(step)}</li>`).join('')}</ol><p class="muted">The property record, interior scan, and aerial capture guide where to look. A site visit can verify the source.</p></section>` : ''}
   </section>`;
 }
@@ -429,6 +470,9 @@ main{padding-block:clamp(1.45rem,4vw,3rem)}
 .estimate{background:#f4edf1;border-radius:.58rem;margin-top:.8rem;padding:.66rem .8rem}.estimate strong{font-weight:650}
 .satellite-card{margin-bottom:.9rem}
 .satellite-map{display:block;width:100%;height:clamp(24rem,44vw,39rem);border:0;border-radius:.65rem;background:#f4edef;margin-top:.72rem}
+.property-view{margin-top:.9rem}.property-view summary{cursor:pointer;font-weight:650;color:#632c50}
+.property-view iframe{display:block;width:100%;height:clamp(19rem,40vw,34rem);border:0;border-radius:.65rem;background:#231721;margin:.75rem 0}
+.assessment-card{margin-top:1rem;background:linear-gradient(135deg,#f4e5ef,#fffcfa 72%)}.assessment-card h2{margin-bottom:.7rem}
 footer{padding:0 0 2rem;color:#614e5d;font-size:.83rem}
 @media(max-width:730px){.action-grid,.chart-grid{grid-template-columns:minmax(0,1fr)}.shell{width:calc(100% - 1.3rem)}.chart-ticks text{font-size:23px}}
 `;
@@ -451,7 +495,7 @@ function reportMarkup(report, { navigationHref, navigationLabel, reference, rend
           <figcaption><strong>3D reference model</strong>${report.renderStatus === 'ready' ? `<p>${model}.</p><p class="muted">Blender rendered</p>` : ''}</figcaption>
         </figure>
       </div>
-      ${buildingContent(report.building, report)}${neighborhood(report.area)}
+      ${inspectionDecision(report.inspectionAssessment)}${buildingContent(report.building, report)}${neighborhood(report.area)}
     </main><footer class="shell">${esc(footer)}</footer>`;
   return { title, html };
 }
@@ -512,7 +556,9 @@ export default {
     const { renderPng, ...metadata } = report;
     if (api) return response(JSON.stringify(metadata), 200, 'application/json; charset=utf-8');
     const page = response(reportHtml(metadata, uuid), 200, 'text/html; charset=utf-8');
-    page.headers.set('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; frame-src https://www.arcgis.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+    const matterport = metadata.building?.publicMatterportModel && publicModelId.test(metadata.building.publicMatterportModel)
+      ? ' https://my.matterport.com' : '';
+    page.headers.set('Content-Security-Policy', `default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; frame-src https://www.arcgis.com${matterport}; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`);
     return page;
   },
 };
