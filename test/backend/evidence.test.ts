@@ -4,7 +4,7 @@ import { createServer } from 'node:net';
 import { once } from 'node:events';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
@@ -32,16 +32,20 @@ test('repair evidence and render jobs in PostgreSQL', { timeout: 30_000 }, async
   const url = `postgres://postgres:fixture@127.0.0.1:${port}/postgres`;
   const pool = new pg.Pool({ connectionString: url });
   let started = false;
-  t.after(async () => {
+  try {
+    await postgres.initialise();
+    await postgres.start();
+    started = true;
+    await pool.query(await readFile('backend/db/schema.sql', 'utf8'));
+    await runEvidenceCases(t, pool, url, dir);
+  } finally {
     await pool.end();
     if (started) await postgres.stop();
     await rm(dir, { recursive: true, force: true });
-  });
-  await postgres.initialise();
-  await postgres.start();
-  started = true;
-  await pool.query(await readFile('backend/db/schema.sql', 'utf8'));
+  }
+});
 
+async function runEvidenceCases(t: TestContext, pool: pg.Pool, url: string, dir: string) {
   const cfg = await loadConfig({
     DEMO_MODE: 'true', REPAIR_CONTEXT: 'true', BLENDER_RENDERER: '/fixture',
     DATABASE_URL: url, REPORT_SHARE_ORIGIN: 'https://reports.example.invalid',
@@ -143,7 +147,6 @@ test('repair evidence and render jobs in PostgreSQL', { timeout: 30_000 }, async
     await writeFile(renderer, '#!/bin/sh\nif [ "$2" = bucket ]; then cat "$(dirname "$0")/result.png"; else printf bad; fi\n', { mode: 0o755 });
     subtest.mock.method(console, 'warn', () => {});
     const stop = startBlenderWorker(pool, renderer);
-    subtest.after(stop);
     async function waitFor(id: string, expected: string, attempts: number) {
       for (let i = 0; i < 80; i++) {
         const { rows: [row] } = await pool.query<{ status: string; attempts: number; image: Buffer | null }>(
@@ -154,14 +157,18 @@ test('repair evidence and render jobs in PostgreSQL', { timeout: 30_000 }, async
       }
       assert.fail(`Render L-${id} did not reach ${expected} after ${attempts} failed attempts`);
     }
-    assert.deepEqual(await waitFor(ids.leak, 'ready', 0), png);
-    assert.equal(await waitFor(ids.stair, 'queued', 1), null);
-    const result = await pool.query<{ waiting: boolean }>('SELECT run_after > now() AS waiting FROM blender_renders WHERE order_id=$1', [ids.stair]);
-    assert(result.rows[0].waiting);
-    await pool.query('UPDATE blender_renders SET run_after=now() WHERE order_id=$1', [ids.stair]);
-    assert.equal(await waitFor(ids.stair, 'queued', 2), null);
-    await pool.query('UPDATE blender_renders SET run_after=now() WHERE order_id=$1', [ids.stair]);
-    assert.equal(await waitFor(ids.stair, 'failed', 3), null);
+    try {
+      assert.deepEqual(await waitFor(ids.leak, 'ready', 0), png);
+      assert.equal(await waitFor(ids.stair, 'queued', 1), null);
+      const result = await pool.query<{ waiting: boolean }>('SELECT run_after > now() AS waiting FROM blender_renders WHERE order_id=$1', [ids.stair]);
+      assert(result.rows[0].waiting);
+      await pool.query('UPDATE blender_renders SET run_after=now() WHERE order_id=$1', [ids.stair]);
+      assert.equal(await waitFor(ids.stair, 'queued', 2), null);
+      await pool.query('UPDATE blender_renders SET run_after=now() WHERE order_id=$1', [ids.stair]);
+      assert.equal(await waitFor(ids.stair, 'failed', 3), null);
+    } finally {
+      await stop();
+    }
   });
 
   await t.test('a matched leak records and sends the inspection plan', async () => {
@@ -234,4 +241,4 @@ test('repair evidence and render jobs in PostgreSQL', { timeout: 30_000 }, async
     ]);
   });
 
-});
+}
