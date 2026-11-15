@@ -649,10 +649,13 @@ export function SharedReport({ access }: { access: string }) {
     area?: Area; building?: BuildingEvidence; inspectionAssessment?: InspectionAssessment; renderStatus?: string }>(url);
   const building = data?.building;
   const model = building?.publicMatterportModel;
-  const propertyView = model && /^[A-Za-z0-9]{1,64}$/.test(model)
+  const propertyView = building?.hasMatterport && model && /^[A-Za-z0-9]{1,64}$/.test(model)
     ? `https://my.matterport.com/show/?m=${model}&play=1` : undefined;
   return <><Header /><main className="page">{data ? <>
-    <section className="heading"><div><p className="eyebrow">Work order L-{data.id}</p><h1>{data.issue === 'leak' ? 'Water leak' : 'Building damage'}</h1></div><Badge status={data.status} /></section>
+    <section className="heading shared-report-heading">
+      <div><p className="eyebrow">Work order L-{data.id}</p><h1>{data.issue === 'leak' ? 'Water leak' : 'Building damage'}</h1></div>
+      <div className="report-actions"><Badge status={data.status} />{propertyView && <a href="#matterport-view">View building in 3D</a>}</div>
+    </section>
     <section className="panel evidence"><div className="panel-head"><div><h2>Temporary protection</h2><p>{data.guidance}</p></div></div>
       {data.renderStatus === 'ready' ? <figure className="roof-image"><img src={`${url}/render`} alt="3D guide showing temporary protection and what maintenance should repair" /><figcaption className="caption">Blender rendered</figcaption></figure>
         : data.renderStatus === 'queued' && <p className="caption">Generating the 3D diagram…</p>}</section>
@@ -660,6 +663,13 @@ export function SharedReport({ access }: { access: string }) {
       <div className="panel-head"><h2>Inspection recommendation</h2></div>
       <p className="caption">{data.inspectionAssessment.reason}</p>
       <p className="caption">{data.inspectionAssessment.nextStep}</p>
+    </section>}
+    {propertyView && <section className="panel property-view" id="matterport-view" aria-labelledby="matterport-heading">
+      <div className="panel-head">
+        <h2 id="matterport-heading">Explore the property in 3D</h2>
+        <a href={propertyView} target="_blank" rel="noreferrer">Open in Matterport</a>
+      </div>
+      <iframe className="showcase" src={propertyView} title="Matterport 3D property scan" loading="lazy" referrerPolicy="no-referrer" allow="fullscreen" />
     </section>}
     <section className="panel evidence">
       <div className="panel-head"><h2>CoStar Group building evidence</h2></div>
@@ -671,11 +681,6 @@ export function SharedReport({ access }: { access: string }) {
         {building.hasMatterport && <div><dt>Matterport</dt><dd>{building.roomLabel ?? 'Verified building model'}{building.roomEvidence?.areaSqFt && ` · ${building.roomEvidence.areaSqFt.toLocaleString('en-US')} sq ft measured`}</dd></div>}
         {building.hasVexcel && <div><dt>Vexcel</dt><dd>{building.captureDate ? `Roof image captured ${building.captureDate}` : 'Roof evidence available to maintenance'}</dd></div>}
       </dl> : <p className="caption">CoStar building evidence is unavailable for this address.</p>}
-      {propertyView && <details className="property-view">
-        <summary>Explore the property in 3D</summary>
-        <iframe className="showcase" src={propertyView} title="Matterport 3D property scan" loading="lazy" referrerPolicy="no-referrer" allow="fullscreen" />
-        <a href={propertyView} target="_blank" rel="noreferrer">Open in Matterport</a>
-      </details>}
     </section>
     <Neighborhood area={data.area} />
     <p className="inspection"><strong>Possible effects</strong> {data.effects}</p>

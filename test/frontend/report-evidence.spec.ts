@@ -41,6 +41,39 @@ test('a tenant report moves from generating to a visible guide without a reload'
   await expect(page.getByText('Generating the 3D diagram…')).toHaveCount(0);
 });
 
+test('a shared report shows the approved Matterport scan without an extra click', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const modelUrl = 'https://my.matterport.com/show/?m=ApprovedModel&play=1';
+  let hasMatterport = true;
+  await page.route('https://my.matterport.com/show/**', (route) => route.fulfill({ body: '' }));
+  await page.route(`**${tenantApi}`, (route) => route.fulfill({ json: {
+    id: '21', status: 'open', issue: 'leak', guidance: 'Keep the walkway clear.',
+    effects: 'Wet materials can develop mold.',
+    inspectionAssessment: { reason: 'Check the ceiling first.', nextStep: 'Request an on-site visit.' },
+    building: { storiesAboveGrade: 1, hasMatterport, publicMatterportModel: 'ApprovedModel' },
+  } }));
+  await page.goto(`/reports/${key}`);
+
+  const scan = page.getByRole('region', { name: 'Explore the property in 3D' });
+  const frame = scan.locator('iframe');
+  await expect(frame).toBeVisible();
+  await expect(frame).toHaveAttribute('src', modelUrl);
+  await expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer');
+  await expect(scan.getByRole('link', { name: 'Open in Matterport' })).toHaveAttribute('href', modelUrl);
+  expect((await page.locator('main h2').allTextContents()).slice(0, 4)).toEqual([
+    'Temporary protection', 'Inspection recommendation', 'Explore the property in 3D', 'CoStar Group building evidence',
+  ]);
+  await page.getByRole('link', { name: 'View building in 3D' }).click();
+  await expect(page).toHaveURL(/#matterport-view$/);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+
+  hasMatterport = false;
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Water leak' })).toBeVisible();
+  await expect(scan).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'View building in 3D' })).toHaveCount(0);
+});
+
 test('the manager’s work order displays the tenant photo and timeline', async ({ page }) => {
   await page.route(`**${workOrderApi}`, (route) => route.fulfill({ json: {
     id: '21', status: 'awaiting_confirmation', zoneId: 'reported', demo: false,
