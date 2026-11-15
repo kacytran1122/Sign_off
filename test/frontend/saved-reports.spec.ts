@@ -81,3 +81,36 @@ test('a saved tenant report survives sign-out and shows the landlord’s update 
     await tenantContext.close();
   }
 });
+
+for (const account of [
+  { role: 'Tenant account', password: 'signoff', tag: '@signoff ' },
+  { role: 'Landlord account', password: 'landyord', tag: '' },
+]) {
+  test(`${account.role} can link texting and open verified reports`, async ({ page }) => {
+    const code = '3E118209777AF573B5E11BFBB6167A02';
+    const reportPath = '/reports/ab123456-7890-4321-8000-123456789012';
+    const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
+    let stage: 'unlinked' | 'pending' | 'linked' = 'unlinked';
+    await page.route(`**${api}/photon`, route => {
+      if (route.request().method() === 'POST') stage = 'pending';
+      return route.fulfill({ json: stage === 'pending'
+        ? { state: stage, code, expiresAt, reports: [] }
+        : { state: stage, reports: stage === 'linked'
+          ? [{ id: '16', title: 'Ceiling leak', status: 'scheduled', createdAt: '2026-11-15T12:00:00Z', url: reportPath }]
+          : [] } });
+    });
+
+    await page.goto(workspace);
+    await signIn(page, account.password);
+    await expect(page.getByText(account.role, { exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Reports from texting' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Open repair report' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Link messaging account' }).click();
+    await expect(page.getByLabel('Verification message')).toHaveValue(`${account.tag}LINK ${code}`);
+    stage = 'linked';
+    const report = page.getByRole('link', { name: 'Open repair report' });
+    await expect(report).toHaveAttribute('href', new URL(reportPath, page.url()).href, { timeout: 15_000 });
+    await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+    await expect(report).toHaveCount(0);
+  });
+}

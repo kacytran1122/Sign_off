@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { SignoffLogo } from '../../brand/SignoffLogo';
+import { errorMessage, request, RequestError, type Role } from './api';
+import { PhotonReports } from './PhotonReports';
 import styles from './saved-reports.module.css';
 
-type Role = 'tenant' | 'landlord';
 type Status = 'received' | 'scheduled' | 'fixed';
 type Report = {
   id: string;
@@ -18,30 +19,6 @@ type Report = {
 const statuses: Record<Status, string> = { received: 'Received', scheduled: 'Scheduled', fixed: 'Fixed' };
 const accountName: Record<Role, string> = { tenant: 'Tenant account', landlord: 'Landlord account' };
 const reportDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
-
-class RequestError extends Error {
-  constructor(message: string, readonly status: number) {
-    super(message);
-  }
-}
-
-async function request<T>(path = '', options?: RequestInit): Promise<T> {
-  const configuredOrigin = process.env.NEXT_PUBLIC_SAVED_REPORTS_ORIGIN ?? '';
-  const origin = window.location.hostname === process.env.NEXT_PUBLIC_SAVED_REPORTS_FALLBACK_HOST
-    ? process.env.NEXT_PUBLIC_SAVED_REPORTS_FALLBACK_ORIGIN ?? configuredOrigin
-    : configuredOrigin;
-  const response = await fetch(`${origin.replace(/\/$/, '')}/api/saved-reports${path}`, {
-    ...options, credentials: 'include', cache: 'no-store',
-    headers: options?.body ? { 'Content-Type': 'application/json' } : undefined,
-  });
-  const data = await response.json().catch(() => undefined);
-  if (!response.ok) throw new RequestError(data?.error ?? 'The report service is temporarily unavailable.', response.status);
-  return data;
-}
-
-function errorMessage(error: unknown) {
-  return error instanceof RequestError ? error.message : 'Could not reach Signoff. Try again in a moment.';
-}
 
 function SavedReport({ report, role, onUpdate }: {
   report: Report;
@@ -234,17 +211,25 @@ export default function SavedReports() {
       <div className={styles.headline}>
         <h1>Repair reports</h1>
         <p>{role === 'landlord'
-          ? 'Review tenant reports and update the repair status.'
-          : role === 'tenant' ? 'Save a report and check its repair status here.'
+          ? 'Track repairs at your assigned property.'
+          : role === 'tenant' ? 'Track the repairs you reported.'
             : 'Sign in to see your saved repair reports.'}</p>
-        <p className={styles.accountNote}>These are shared test accounts. Use them for reports without personal details.</p>
       </div>
       {error && <p className={styles.error} role="alert">{error}</p>}
       {role === undefined ? <div className={`${styles.card} ${styles.signIn}`}>
         {error
           ? <button type="button" onClick={() => { setError(''); setAttempt(value => value + 1); }}>Try again</button>
           : <p role="status">Checking your session…</p>}
-      </div> : role ? <Workspace role={role} onExpired={expireSession} /> :
+      </div> : role ? <>
+        <PhotonReports role={role} onExpired={expireSession} />
+        <section aria-labelledby="test-workspace-title" className={styles.testWorkspace}>
+          <div className={styles.workspaceIntro}>
+            <h2 id="test-workspace-title">Test workspace</h2>
+            <p className={styles.muted}>Test reports are shared between the test accounts. Leave out personal details.</p>
+          </div>
+          <Workspace role={role} onExpired={expireSession} />
+        </section>
+      </> :
         <section className={`${styles.card} ${styles.signIn}`} aria-labelledby="sign-in-title">
           <h2 id="sign-in-title">Sign in</h2>
           <form className={styles.form} onSubmit={signIn}>
