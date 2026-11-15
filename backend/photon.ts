@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
+import type { PoolClient } from 'pg';
 import type { Webhook } from 'standardwebhooks';
-import type { Config } from './config.js';
+import { normalizeHandle, type Config, type Role } from './config.js';
 
 export type PhotonConnection = Pick<Config, 'photonProject' | 'photonKey'>;
 
@@ -60,6 +61,23 @@ export function readMessage(object: unknown): Message | undefined {
     id: message.id, handle: message.sentBy.handle, space: message.space.id,
     agent: message.receivedBy.id, text, attachmentId,
   };
+}
+
+const tenantMention = /^@signoff(?=$|[\s,:])[\s,:]*/i;
+
+/** Gate Photon before downloading photos or asking a model to process a tenant's text. */
+export async function activatePhotonMessage(db: Pick<PoolClient, 'query'>, message: Message, role: Role, project?: string) {
+  if (role === 'manager') return message;
+  if (tenantMention.test(message.text)) {
+    const text = message.text.replace(tenantMention, '').trim();
+    return { ...message, text: text || (message.attachmentId ? '' : 'START') };
+  }
+  if (message.text || !message.attachmentId || !project) return;
+  // An iMessage photo can arrive in its own bubble directly after a tagged report or PHOTO request.
+  const permission = await db.query(`SELECT 1 FROM conversations WHERE handle=$1 AND space_id=$2
+    AND agent_id=$3 AND photon_project=$4 AND tenant_photo_until > now()`,
+  [normalizeHandle(message.handle), message.space, message.agent, project]);
+  return permission.rowCount ? message : undefined;
 }
 
 export class RetryableError extends Error {

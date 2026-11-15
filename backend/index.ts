@@ -14,8 +14,8 @@ import { damagePointInput } from './damage-point.js';
 import { startBlenderWorker } from './blender.js';
 import { startAreaWorker } from './area.js';
 import { guidance, repairEffects, repairTimeZone, type Aid, type Issue } from './repair.js';
-import { downloadPhoto, listReceivedMessages, photoLimit, readMessage, RetryableError, sendText, verifyEvent, type PhotonConnection } from './photon.js';
-import { handleMessage, prepareReport, remindManager } from './workflow.js';
+import { activatePhotonMessage, downloadPhoto, listReceivedMessages, photoLimit, readMessage, RetryableError, sendText, verifyEvent, type PhotonConnection } from './photon.js';
+import { handleMessage, photoOrderReply, prepareReport, remindManager } from './workflow.js';
 import { createAgents, planManager, runAgentTasks, runFollowUps } from './agents/index.js';
 import type { ManagerPlan } from './agents/scheduler.js';
 
@@ -284,7 +284,9 @@ async function tick() {
         let message = type === 'message.received' ? readMessage(object) : undefined;
         const handle = message ? normalizeHandle(message.handle) : '';
         const connection = connectionFor(handle);
-        if (!cfg.participants.has(handle) || project !== connection.photonProject) message = undefined;
+        const participant = cfg.participants.get(handle);
+        if (!participant || project !== connection.photonProject) message = undefined;
+        else if (message && !cfg.demo) message = await activatePhotonMessage(client, message, participant.role, project);
         let prepared;
         let managerPlan: ManagerPlan | undefined;
         if (message) {
@@ -301,7 +303,16 @@ async function tick() {
         }
         await client.query('BEGIN');
         try {
-          if (message) await handleMessage(client, cfg, message, prepared, project, managerPlan);
+          if (message) {
+            await handleMessage(client, cfg, message, prepared, project, managerPlan);
+            if (!cfg.demo && participant?.role === 'tenant') {
+              const expectsPhoto = !message.attachmentId && (/^start[.!]?$/i.test(message.text) || photoOrderReply.test(message.text) ||
+                (prepared?.pending && !prepared.pending.photo &&
+                  (prepared.interpreted?.isLeak || prepared.interpreted?.isDamage)));
+              await client.query(`UPDATE conversations SET tenant_photo_until =
+                CASE WHEN $2 THEN now() + interval '5 minutes' END WHERE handle=$1`, [handle, !!expectsPhoto]);
+            }
+          }
           if (type === 'message.delivered' || type === 'message.failed') {
             await client.query("UPDATE outbox SET status=$2 WHERE photon_message_id=$1 AND status <> 'delivered'",
               [z.object({ id: z.string() }).parse(object).id, type === 'message.delivered' ? 'delivered' : 'failed']);

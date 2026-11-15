@@ -4,6 +4,7 @@ import type { Message } from '../photon.js';
 import { isManagerCommand, notify, record, remindManager } from '../workflow.js';
 import { runEvidence } from './evidence.js';
 import { runFollowUp, type FollowUp } from './followup.js';
+import { answerManagerQuestion } from './manager-questions.js';
 import { openAiModel } from './openai-model.js';
 import { plainText, warnAgentFailure, type Model } from './runtime.js';
 import { planManagerMessage, type ManagerPlan } from './scheduler.js';
@@ -41,12 +42,15 @@ async function inTransaction<T>(db: PoolClient, work: () => Promise<T>) {
 
 /** Scheduler agent: only free-form manager texts. Exact commands keep the fast deterministic path. */
 export async function planManager(db: PoolClient, cfg: Config, agents: Agents | undefined, message: Message): Promise<ManagerPlan | undefined> {
-  if (!agents || cfg.participants.get(normalizeHandle(message.handle))?.role !== 'manager' || isManagerCommand(message.text)) return;
-  try {
-    return await planManagerMessage(db, cfg, agents.model, message.text);
-  } catch (error) {
-    warnAgentFailure('scheduler', error);
+  if (cfg.participants.get(normalizeHandle(message.handle))?.role !== 'manager' || isManagerCommand(message.text)) return;
+  if (agents) {
+    try {
+      return await planManagerMessage(db, cfg, agents.model, message.text);
+    } catch (error) {
+      warnAgentFailure('scheduler', error);
+    }
   }
+  return { kind: 'reply', text: await answerManagerQuestion(db, cfg, message.text), trace: [] };
 }
 
 /** Evidence agent: picks up one due hand-off for this property. */

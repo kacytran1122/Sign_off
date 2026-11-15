@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS conversations (
   pending jsonb NOT NULL DEFAULT '{}'
 );
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS photon_project text;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS tenant_photo_until timestamptz;
 CREATE TABLE IF NOT EXISTS work_orders (
   id bigserial PRIMARY KEY,
   property_id text NOT NULL,

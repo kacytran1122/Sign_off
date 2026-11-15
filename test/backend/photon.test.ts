@@ -1,7 +1,8 @@
 import { strict as assert } from 'node:assert';
 import { describe, test } from 'node:test';
+import type { PoolClient } from 'pg';
 import {
-  downloadPhoto, listReceivedMessages, photoLimit, readMessage, RetryableError, sendText,
+  activatePhotonMessage, downloadPhoto, listReceivedMessages, photoLimit, readMessage, RetryableError, sendText,
 } from '../../backend/photon.js';
 
 const connection = { photonProject: 'project-fixture', photonKey: 'key-fixture' };
@@ -44,6 +45,37 @@ describe('Photon transport', () => {
     ]) {
       assert.equal(readMessage({ ...base, ...rejected }), undefined, JSON.stringify(rejected));
     }
+  });
+
+  test('only tagged tenant text and scoped photo follow-ups activate Signoff', async () => {
+    const tenant = { id: 'event', handle: 'Tenant@example.invalid', space: 'tenant-space', agent: 'tenant-agent' };
+    let queries = 0;
+    const db = { query: async (sql: string, values: unknown[]) => {
+      queries++;
+      assert.match(sql, /tenant_photo_until > now\(\)/);
+      assert.match(sql, /agent_id=\$3 AND photon_project=\$4/);
+      assert.equal(values[0], 'tenant@example.invalid');
+      return { rowCount: values[1] === tenant.space && values[2] === tenant.agent && values[3] === 'tenant-project' ? 1 : 0 };
+    } } as Pick<PoolClient, 'query'>;
+
+    for (const text of ['Water dripping', 'Resolved L-2', 'Water dripping @signoff', '@signoffpartner Water dripping', '@signoff.us Water dripping']) {
+      assert.equal(await activatePhotonMessage(db, { ...tenant, text }, 'tenant', 'tenant-project'), undefined);
+    }
+    for (const [input, expected] of [['@SignOff Water dripping', 'Water dripping'], ['@signoff: Resolved L-2', 'Resolved L-2'], ['@signoff', 'START']]) {
+      const message = { ...tenant, text: input };
+      assert.deepEqual(await activatePhotonMessage(db, message, 'tenant', 'tenant-project'), { ...message, text: expected });
+    }
+    const photo = { ...tenant, text: '', attachmentId: 'image' };
+    assert.deepEqual(await activatePhotonMessage(db, { ...photo, text: '@signoff' }, 'tenant', 'tenant-project'), photo);
+    assert.equal(await activatePhotonMessage(db, { ...photo, text: 'Caption without a tag' }, 'tenant', 'tenant-project'), undefined);
+    const manager = { ...tenant, handle: 'manager@example.invalid', text: 'What is the status of L-2?' };
+    assert.equal(await activatePhotonMessage(db, manager, 'manager', 'manager-project'), manager);
+    assert.equal(queries, 0);
+
+    assert.equal(await activatePhotonMessage(db, photo, 'tenant', 'tenant-project'), photo);
+    assert.equal(await activatePhotonMessage(db, { ...photo, agent: 'other-agent' }, 'tenant', 'tenant-project'), undefined);
+    assert.equal(await activatePhotonMessage(db, photo, 'tenant', 'manager-project'), undefined);
+    assert.equal(queries, 3);
   });
 
   test('photo download preserves original bytes and normalizes the image MIME', async (t) => {
